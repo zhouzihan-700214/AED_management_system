@@ -1,0 +1,52 @@
+STAGE 3 SAFE WEBSITE -> EXCEL WRITE-BACK VALIDATION
+Generated: 01 Aug 2026
+
+Scope
+- AED Management only
+- One existing AED per save
+- Writable: Block / Locations, Street Name, Postal Code, Next PM Date
+- Read-only: Serial Number, generated Location, Remarks, coordinates
+- Add/Delete intentionally disabled
+
+Automated validation
+- pytest: 32 tests passed
+- Python compileall: passed
+- AST parsing: 49 Python files, 0 errors
+- AED Management direct aed_data.csv reads: 0
+- AED Management direct CSV/workbook writes: 0
+- Repository write route: aed_repository.update_unit -> excel_write_service
+
+Real workbook checks
+- Worksheet: Sheet1
+- Sheet dimensions: 16 rows x 29 columns
+- AED Serial Numbers: 12
+- Unique Serial Numbers: 12
+- Remarks continuation rows: [4, 6]
+- Reserved staging sheet present in delivery workbook: No
+- Delivery workbook hash equals Stage 2 source: True
+
+CSV mirror checks
+- AED rows: 12
+- Block / Locations column present: True
+- Street Name column present: True
+- Empty Serial Numbers: 0
+- Duplicate Serial Numbers: 0
+
+Write-back safety implemented
+1. Atomic O_EXCL website write lock
+2. Stable copy of official workbook to same directory
+3. Dynamic row-1 header scan
+4. Serial Number row lookup from row 3
+5. Supported-field allowlist and read-only denylist
+6. Hidden __STAGING_UPDATE__ worksheet in temporary workbook
+7. First reopen/validation with staging sheet
+8. Staging sheet removal
+9. Second reopen/validation before replacement
+10. Timestamped pre-change Excel backup, newest 20 retained
+11. os.replace final workbook replacement
+12. Stage 2 Excel -> CSV resynchronization
+13. Postal Code change clears stale coordinates during resync
+14. Field-level data/excel_write_history.csv audit records
+15. Accurate partial-success result if Excel changed but cache refresh fails
+
+Manual browser test still required on the user's Streamlit environment because Streamlit is not installed in this execution container.

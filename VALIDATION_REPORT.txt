@@ -1,0 +1,42 @@
+AED Operations Control Center v3 — Validation Report
+====================================================
+
+Completed checks
+----------------
+- Python syntax compilation: PASSED
+- Existing AED / PM / Issue service tests: PASSED
+- New Operations Control Center service tests: PASSED
+- Total pytest result: 17 PASSED
+- Dashboard snapshot smoke test against included CSV data: PASSED
+- Empty and BOM-only operational CSV schema initialization: PASSED
+- PM interval migration for AED master data: PASSED
+- Embedded real-credential cleanup: PASSED
+- Archive root layout: app.py at ZIP root
+
+Dashboard checks covered by tests
+---------------------------------
+- empty sources do not crash;
+- overdue and due-soon PM classification;
+- assignment lookup from PM plans;
+- pending verification is separated from general open Issues;
+- unified operational priority ordering;
+- implausible legacy dates are not treated as consumable expiry alerts;
+- duplicate serial, missing coordinates and invalid-date exceptions;
+- monthly PM summary calculations;
+- recent activity ordering;
+- view, assignee and text filtering;
+- startup creation of valid operational CSV headers.
+
+Included-data smoke result
+--------------------------
+- Unified queue rows: 12
+- Queue categories: 8 Readiness, 3 Data, 1 Issue
+- Data/source warnings: 3
+- Recent activity rows: 3
+
+Important limitation
+--------------------
+The build environment does not include Streamlit, so browser-level visual
+rendering, widget interaction, responsive layout and Folium display were not
+executed here. Install requirements.txt and run BASELINE_CHECKLIST.md in the
+normal local Streamlit environment.

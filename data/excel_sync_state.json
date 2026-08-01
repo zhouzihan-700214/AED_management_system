@@ -1,0 +1,26 @@
+{
+  "excel_file": "C:\\Users\\admin\\Downloads\\AED_System_Operations_Control_Center_v3_Stage5_Direct_Table_Editing\\AED_System_Operations_Control_Center_v3_Stage5_Direct_Table_Editing\\external_data\\IB_list_TEST.xlsx",
+  "excel_sheet": "Sheet1",
+  "observed_excel_signature": {
+    "modified_time_ns": 1785567416381087500,
+    "size": 9057
+  },
+  "last_checked_at": "01-08-2026 14:56:57",
+  "last_sync_time": "01-08-2026 14:56:57",
+  "sync_status": "synced",
+  "sync_message": "Imported 12 AED unit(s) from IB_list_TEST.xlsx [Sheet1].",
+  "row_count": 12,
+  "warnings": [
+    "Excel row 4 was merged into X16B816938 Remarks.",
+    "Excel row 6 was merged into X17G941204 Remarks.",
+    "X18K075125 Adult Pads Expiry Date looks unusual (16-02-1930). Check the source Excel cell.",
+    "X16A810545 Adult Pads Expiry Date looks unusual (17-08-1930). Check the source Excel cell.",
+    "X16B817028 Adult Pads Expiry Date looks unusual (16-11-1930). Check the source Excel cell.",
+    "X16B816942 Adult Pads Expiry Date looks unusual (16-11-1930). Check the source Excel cell.",
+    "X21H400832 Battery Expiry Date looks unusual (01-03-1934). Check the source Excel cell."
+  ],
+  "last_successful_signature": {
+    "modified_time_ns": 1785567416381087500,
+    "size": 9057
+  }
+}

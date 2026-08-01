@@ -1,0 +1,31 @@
+AED EXCEL SYNCHRONIZATION — STAGE 1 VALIDATION
+================================================
+
+Completed checks
+----------------
+1. Python compilation completed for the project source.
+2. Automated test suite: 21 passed.
+3. Added Excel synchronization tests for:
+   - Excel header alias mapping;
+   - six-digit postal-code preservation;
+   - ISO/Excel date normalization;
+   - unchanged workbook detection;
+   - duplicate Serial Number rejection;
+   - last-valid-cache preservation;
+   - CSV fallback when the workbook is absent.
+4. Verified repository usage in all main Streamlit pages.
+5. Verified that views no longer call pandas.read_csv for AED master data.
+6. Verified that the ZIP contains no real Streamlit secrets.
+
+Runtime note
+------------
+The build container did not contain Streamlit and its package source was not
+available, so a live browser launch was not possible here. The original service
+and dashboard tests plus the new synchronization tests all pass, and all Python
+files compile successfully. Run the existing BASELINE_CHECKLIST.md after
+installing requirements on the deployment computer.
+
+Current integration boundary
+----------------------------
+Excel -> website synchronization is implemented.
+Website -> Excel conflict-safe write-back is not part of Stage 1.

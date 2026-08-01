@@ -1,0 +1,39 @@
+AED SYSTEM STAGE 5 VALIDATION
+
+Scope
+- Direct cell editing for filtered AED results
+- Review Changes before save
+- Complete single-AED detail editing
+- Complete Add AED form
+- Extended real Excel field mapping
+
+Automated results
+- pytest: 50 passed
+- Python compileall: passed
+- Python AST parse: 58 files, 0 errors
+- Real IB List sync: 12 unique AED units, 35 website columns
+- Empty Serial Number: 0
+- Duplicate Serial Number: 0
+- Real workbook SHA-256 unchanged: 8bf71c301f0a64dc4736569d6e7049fb3c1dccf2a6a7c8e35fad0d80f9a40f78
+
+Covered tests
+- Stable Serial Number row identity
+- Multiple changed cells detected accurately
+- Row insertion/removal rejected
+- Required-field and PM date validation
+- Cell changes grouped into one batch transaction
+- Same-field conflict stops the batch
+- Different fields merge safely
+- Extended fields write to their real Excel columns
+- Legacy N/A values compare as blank website values
+- Remarks continuation text consolidates without duplicate website text
+- Complete Add AED record writes to Excel
+- Postal Code change clears stale coordinates
+- Staging sheet removed before final replacement
+
+Manual browser tests still required
+- Direct table editing visual behaviour in Streamlit
+- Review → Back to Editing retains values
+- Cancel Editing discards unsaved changes
+- Two-browser same-field conflict
+- Excel-open/locked behaviour on Windows
