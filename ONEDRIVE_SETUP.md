@@ -1,14 +1,13 @@
-# Use the IB List from your own OneDrive
+# OneDrive Excel connection
 
-1. Create `AED System` inside the OneDrive folder shown in Windows File Explorer.
-2. Copy `IB_list_TEST.xlsx` into that folder and wait for the green sync tick.
-3. The system automatically checks these common locations:
-   - `C:\Users\<name>\OneDrive\AED System\IB_list_TEST.xlsx`
-   - `C:\Users\<name>\OneDrive - Personal\AED System\IB_list_TEST.xlsx`
-4. When your path is different, copy `.streamlit/secrets.toml.example` to
-   `.streamlit/secrets.toml` and change `[excel].file_path` to the exact path.
-5. Open the same workbook from OneDrive in Excel for the web. Streamlit updates
-   the local synchronized file; OneDrive uploads the new workbook version.
+The preferred deployment is now **browser-only**:
 
-No new pip package is required. Browser refresh may occasionally be needed
-because openpyxl updates the workbook file rather than joining Excel coauthoring.
+```text
+Streamlit browser app <-> Microsoft Graph <-> OneDrive Excel for the web
+```
+
+No Windows OneDrive application or local VS Code session is required.
+
+See `ONEDRIVE_BROWSER_SETUP.md` for the exact Streamlit Secrets and usage steps.
+The existing local-path mode remains available only as a fallback when the
+complete `[microsoft]` Secrets section is not configured.

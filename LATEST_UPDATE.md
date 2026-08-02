@@ -92,3 +92,23 @@ folder. See `ONEDRIVE_SETUP.md` and `.streamlit/secrets.toml.example`.
 - Original operational pages remain available.
 - `requirements.txt` and `requirements-dev.txt` are unchanged; no new pip package
   is required.
+
+## Browser-only OneDrive Excel — latest update
+
+The same project now supports direct two-way synchronization with the personal
+OneDrive workbook configured in Streamlit Secrets:
+
+- Microsoft sign-in is shown before operational pages load.
+- `Refresh AED Data` downloads `/AED System/IB_list_TEST.xlsx` through Microsoft Graph.
+- Confirmed Master Table, PM and planning changes update the private working copy
+  and upload it back to the same OneDrive drive item.
+- OneDrive eTag comparison stops a save when the browser workbook changed after
+  the website loaded it.
+- A failed cloud upload is preserved in `backups/onedrive_pending` and the site
+  reloads the official remote workbook instead of silently overwriting it.
+- The existing project-local Excel mode remains available when `[microsoft]`
+  Secrets are absent.
+- No new runtime package was added; the integration uses the existing `requests`
+  dependency.
+- Streamlit Community Cloud can continue using `streamlit_app.py` as its entry point.
+- 65 automated tests pass, including OneDrive path, download, upload and conflict tests.

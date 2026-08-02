@@ -36,3 +36,8 @@ data/excel_sync.lock
 data/excel_operation.lock
 data/active_transaction.json
 temp/excel_transactions/
+
+# Browser-only OneDrive working files and failed upload recovery copies
+data/onedrive_workbook_cache/
+data/onedrive_sync_state.json
+backups/onedrive_pending/

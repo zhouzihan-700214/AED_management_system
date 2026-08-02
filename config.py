@@ -1,6 +1,7 @@
 from pathlib import Path
 import os
 import tomllib
+from typing import Any
 
 PROJECT_ROOT = Path(__file__).resolve().parent
 BASE_DIR = PROJECT_ROOT  # Backward-compatible alias used by older modules.
@@ -12,13 +13,67 @@ EXTERNAL_DATA_DIR = PROJECT_ROOT / "external_data"
 DATA_DIR = PROJECT_ROOT / "data"
 
 
-def _configured_excel_path() -> Path:
-    """Resolve the IB List, preferring the user's own OneDrive copy.
+def _streamlit_secret_section(name: str) -> dict[str, Any]:
+    """Read a Streamlit Cloud secret section without breaking CLI/tests."""
+    try:
+        import streamlit as st
 
-    Priority: AED_EXCEL_FILE environment variable, .streamlit/secrets.toml,
-    an existing ``OneDrive*/AED System/IB_list_TEST.xlsx`` file, then the
-    project-local testing workbook. No additional package is required.
+        section = st.secrets.get(name, {})
+        return dict(section) if section else {}
+    except Exception:
+        return {}
+
+
+def _local_secret_section(name: str) -> dict[str, Any]:
+    secrets_file = PROJECT_ROOT / ".streamlit" / "secrets.toml"
+    if not secrets_file.exists():
+        return {}
+    try:
+        with secrets_file.open("rb") as handle:
+            payload = tomllib.load(handle)
+        section = payload.get(name, {})
+        return dict(section) if isinstance(section, dict) else {}
+    except (OSError, ValueError, TypeError):
+        return {}
+
+
+def _microsoft_configuration() -> dict[str, str]:
+    section = _streamlit_secret_section("microsoft") or _local_secret_section("microsoft")
+    return {
+        "client_id": str(section.get("client_id", "") or "").strip(),
+        "client_secret": str(section.get("client_secret", "") or "").strip(),
+        "authority": str(
+            section.get("authority", "https://login.microsoftonline.com/consumers")
+            or "https://login.microsoftonline.com/consumers"
+        ).strip(),
+        "redirect_uri": str(section.get("redirect_uri", "") or "").strip(),
+        "onedrive_file_path": str(
+            section.get("onedrive_file_path", "/AED System/IB_list_TEST.xlsx")
+            or "/AED System/IB_list_TEST.xlsx"
+        ).strip(),
+    }
+
+
+MICROSOFT_CONFIG = _microsoft_configuration()
+ONEDRIVE_CLOUD_ENABLED = all(
+    MICROSOFT_CONFIG.get(key)
+    for key in ("client_id", "client_secret", "redirect_uri", "onedrive_file_path")
+)
+ONEDRIVE_CACHE_DIR = DATA_DIR / "onedrive_workbook_cache"
+ONEDRIVE_SYNC_STATE_FILE = DATA_DIR / "onedrive_sync_state.json"
+ONEDRIVE_PENDING_DIR = PROJECT_ROOT / "backups" / "onedrive_pending"
+
+
+def _configured_excel_path() -> Path:
+    """Resolve the local working copy of the IB List.
+
+    In browser-only OneDrive mode, Graph downloads the official workbook into
+    a private app cache. In local mode, the previous path-based behaviour is
+    retained for backward compatibility.
     """
+    if ONEDRIVE_CLOUD_ENABLED:
+        file_name = Path(MICROSOFT_CONFIG["onedrive_file_path"]).name or "IB_list_TEST.xlsx"
+        return ONEDRIVE_CACHE_DIR / file_name
 
     environment_value = os.getenv("AED_EXCEL_FILE", "").strip()
     if environment_value:
@@ -126,5 +181,7 @@ def ensure_project_directories() -> None:
         EXCEL_BACKUP_DIR,
         EXCEL_TRANSACTION_DIR,
         ISSUE_PHOTO_DIR,
+        ONEDRIVE_CACHE_DIR,
+        ONEDRIVE_PENDING_DIR,
     ]:
         directory.mkdir(parents=True, exist_ok=True)
