@@ -63,7 +63,7 @@ The synchronizer reads a stable temporary workbook snapshot, validates required 
 
 When the workbook is absent, the application starts in **CSV fallback** mode. The current build adds controlled multi-user website → Excel updates through the same repository and transaction layer.
 
-AED Master Data now has three safe editing paths:
+The dedicated Master Table page has three safe editing paths:
 
 ```text
 Browse and filter
@@ -142,7 +142,8 @@ WORK MANAGEMENT
   Issues
 
 ASSET CONTROL
-  AED Master Data
+  AED Management
+  Master Table
   AED Map
 
 RECORDS

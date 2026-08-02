@@ -1,0 +1,24 @@
+LATEST PRESERVATION VALIDATION
+==============================
+
+Result: PASS
+
+- Python compileall: PASS
+- Pytest: 60 passed
+- Original project files missing: 0
+- Original Python functions/classes removed: 0
+- AED Management preserved as a compact boss overview: PASS
+- Master Table restored as a separate sidebar page: PASS
+- Old AED Master Data route retained as compatibility alias: PASS
+- Search/filter/direct editing/review/conflict functions retained: PASS
+- Full Details, Add/Deactivate and Audit History retained: PASS
+- Dashboard master-record actions route to Master Table: PASS
+- Operations Dashboard, PM Planning, PM Checklist, Report Issue, Issues,
+  AED Map and Service Records retained: PASS
+- Original Excel and operational CSV records unchanged: PASS
+- Existing custom status rows retained: PASS
+- 15 marker colours available and status definitions remain editable: PASS
+- Pending Verification and Out of Service appended with new IDs: PASS
+- PM and Commissioning retain original list positions: PASS
+- PM+batt, PM+glass, PM +batt +glass appended at list end: PASS
+- requirements files unchanged: PASS

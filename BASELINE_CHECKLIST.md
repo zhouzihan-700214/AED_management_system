@@ -4,7 +4,7 @@ Run this checklist after installing `requirements.txt` and starting Streamlit.
 
 ## Operations Control
 
-- [ ] Application opens on **Operations Control**, not AED Master Data
+- [ ] Application opens on **Operations Control**, not Master Table
 - [ ] Dark compact header and light workspace render correctly
 - [ ] `Overview`, `PM`, `Issues`, and `Asset readiness` views work
 - [ ] Period, assignee, and search filters update the work queue
@@ -12,7 +12,7 @@ Run this checklist after installing `requirements.txt` and starting Streamlit.
 - [ ] Selecting one queue row updates the right-hand detail panel
 - [ ] PM actions open the correct AED in PM Checklist or PM Planning
 - [ ] Issue actions open and focus the correct Issue
-- [ ] AED actions open AED Master Data or Report Issue with the correct serial
+- [ ] AED actions open Master Table or Report Issue with the correct serial
 - [ ] KPI values change appropriately with the selected management view
 - [ ] PM progress, Issue pipeline, readiness, activity, and source health load
 - [ ] An empty queue shows a useful empty state
@@ -20,7 +20,7 @@ Run this checklist after installing `requirements.txt` and starting Streamlit.
 - [ ] At 200% browser zoom, controls and content remain reachable
 - [ ] Keyboard focus is visible on interactive controls
 
-## AED Master Data
+## Master Table
 
 - [ ] Page opens and AED data loads
 - [ ] Keyword Search works
@@ -97,7 +97,7 @@ Run this checklist after installing `requirements.txt` and starting Streamlit.
 
 ## Stage 3 website → Excel write-back regression
 
-- [ ] AED Master Data table is read-only and no longer shows **Save Table Changes**.
+- [ ] Master Table table is read-only and no longer shows **Save Table Changes**.
 - [ ] A single AED can be selected below the filtered table.
 - [ ] Only Block / Locations, Street Name, Postal Code, and Next PM Date are editable.
 - [ ] Serial Number, generated Location, and Remarks are visibly read-only.

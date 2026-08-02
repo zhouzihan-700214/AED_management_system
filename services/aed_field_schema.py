@@ -101,10 +101,11 @@ JOB_TYPE_OPTIONS = [
     "Activation",
     "Consumable Replenishment",
     "Other",
-    # New combined PM types stay at the end of every Service Type list.
-    "PM + Battery",
-    "PM + Glass",
-    "PM + Battery + Glass",
+    # Combined PM types are appended at the end, while PM and Commissioning
+    # remain in their original positions. Existing workbook wording is kept.
+    "PM+batt",
+    "PM+glass",
+    "PM +batt +glass",
 ]
 
 REPAIRED_OPTIONS = ["", "Yes", "No", "Not applicable"]

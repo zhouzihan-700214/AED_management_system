@@ -10,7 +10,9 @@ from utils.streamlit_utils import rerun_app
 
 PAGE_NAMES = {
     "Operations Dashboard",
-    "AED Master Data",
+    "AED Management",
+    "AED Master Table",
+    "AED Master Data",  # Backward-compatible hidden route.
     "AED Map",
     "PM Planning",
     "PM Checklist",
@@ -112,7 +114,8 @@ def render_navigation(issue_record_file: str | Path) -> None:
         (
             "ASSET CONTROL",
             [
-                ("AED Master Data", "▣  AED Management"),
+                ("AED Management", "▣  AED Management"),
+                ("AED Master Table", "▦  Master Table"),
                 ("AED Map", "⌖  AED Map"),
             ],
         ),

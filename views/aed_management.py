@@ -998,6 +998,11 @@ def _navigate_management(page_name: str) -> None:
     rerun_app()
 
 
+def _open_master_table() -> None:
+    reset_management_filters()
+    st.session_state["page"] = "AED Master Table"
+
+
 def _selection_rows(event: Any) -> list[int]:
     selection = getattr(event, "selection", None)
     if selection is None and isinstance(event, dict):
@@ -1059,9 +1064,9 @@ def _render_management_kpis(snapshot: dict[str, Any]) -> None:
         (
             "All AED Units",
             snapshot["total_units"],
-            "Open the full searchable master table",
+            "Open the full Master Table workspace",
             "management_open_all_units",
-            lambda: st.session_state.__setitem__("aed_management_scope", "Manage Units"),
+            _open_master_table,
         ),
         (
             "PM Outstanding",
@@ -1185,9 +1190,8 @@ def _render_quick_aed_view(dataframe: pd.DataFrame) -> None:
             key="management_overview_search",
         )
     with action_col:
-        if st.button("Manage All Units", use_container_width=True):
-            st.session_state["aed_management_scope"] = "Manage Units"
-            rerun_app()
+        if st.button("Open Master Table", use_container_width=True):
+            _navigate_management("AED Master Table")
 
     filtered = dataframe.copy()
     search_text = clean_text(keyword).casefold()
@@ -1279,29 +1283,80 @@ def _render_full_management_workspace(
         st.divider()
         render_full_details_editor(filtered)
 
-    render_add_and_deactivate(dataframe)
-    render_audit_log(history_file)
+    with st.expander("Add or Deactivate AED", expanded=False):
+        render_add_and_deactivate(dataframe)
+    with st.expander("Audit and Change History", expanded=False):
+        render_audit_log(history_file)
+
+
+def _render_writeback_messages() -> None:
+    writeback_notice = st.session_state.pop("aed_writeback_notice", "")
+    if writeback_notice:
+        st.success(writeback_notice)
+    for warning in st.session_state.pop("aed_writeback_warnings", []):
+        st.warning(warning)
+
+
+def _load_management_dataframe() -> pd.DataFrame | None:
+    try:
+        return get_all_units()
+    except Exception as error:
+        st.error(f"Failed to load AED data: {error}")
+        return None
 
 
 def render_aed_management(
     aed_data_file: str | Path,
     history_file: str | Path,
 ) -> None:
+    """Render the compact management overview for supervisors and bosses."""
+
+    del aed_data_file, history_file
+    page_header(
+        "AED Management",
+        "Review fleet condition, PM progress and unresolved risk without opening the detailed Master Table.",
+        eyebrow="ASSET CONTROL · MANAGEMENT OVERVIEW",
+        chip="BOSS OVERVIEW",
+    )
+
+    dataframe = _load_management_dataframe()
+    if dataframe is None:
+        return
+
+    snapshot = _management_snapshot(dataframe)
+    _render_management_kpis(snapshot)
+
+    overview_left, overview_right = st.columns([1.45, 1], gap="large")
+    with overview_left:
+        _render_attention_required(snapshot)
+    with overview_right:
+        _render_pm_progress(snapshot)
+
+    _render_quick_aed_view(dataframe)
+
+
+def render_aed_master_table(
+    aed_data_file: str | Path,
+    history_file: str | Path,
+) -> None:
+    """Render the complete original Master Table as its own sidebar page."""
+
     del aed_data_file
     initialise_table_editor_state()
 
     page_header(
-        "AED Management",
-        "A concise management view of fleet readiness, PM progress and unresolved risk, with the full master-data workspace one click away.",
-        eyebrow="ASSET CONTROL · MANAGEMENT VIEW",
-        chip="OVERVIEW + UNIT MANAGEMENT",
+        "AED Master Table",
+        "Search, filter, edit several cells directly, review every difference and save safely to the IB List.",
+        eyebrow="ASSET CONTROL · DIRECT TABLE EDITING",
+        chip="REVIEW BEFORE SAVE",
+        capabilities=[
+            ("Direct cell editing", "Edit filtered AED rows without opening each unit."),
+            ("Review changes", "See every old and new value before confirming."),
+            ("Conflict protection", "Same-field conflicts stop the whole transaction."),
+        ],
     )
 
-    writeback_notice = st.session_state.pop("aed_writeback_notice", "")
-    if writeback_notice:
-        st.success(writeback_notice)
-    for warning in st.session_state.pop("aed_writeback_warnings", []):
-        st.warning(warning)
+    _render_writeback_messages()
 
     mode = st.session_state.aed_editor_mode
     if mode == "edit":
@@ -1315,26 +1370,38 @@ def render_aed_management(
         st.error("Unknown editor state. The page was reset.")
         return
 
-    try:
-        dataframe = get_all_units()
-    except Exception as error:
-        st.error(f"Failed to load AED data: {error}")
+    dataframe = _load_management_dataframe()
+    if dataframe is None:
         return
 
-    scope_options = ["Boss Overview", "Manage Units"]
-    stored_scope = st.session_state.get("aed_management_scope", "Boss Overview")
-    if stored_scope not in scope_options:
-        stored_scope = "Boss Overview"
-        st.session_state["aed_management_scope"] = stored_scope
+    # Keep the original Master Table workflow complete and visible on this
+    # dedicated page. The boss overview is a separate sidebar route.
+    table_col, filter_col = st.columns([4.4, 1.35], gap="large")
+    with filter_col:
+        filters = render_filters(dataframe)
 
-    scope = st.segmented_control(
-        "AED Management scope",
-        options=scope_options,
-        key="aed_management_scope",
-        label_visibility="collapsed",
-    ) or "Boss Overview"
+    filtered = aed_service.apply_filters(
+        dataframe=dataframe,
+        keyword=filters["keyword"],
+        model=filters["model"],
+        location=filters["location"],
+        postal_code=filters["postal_code"],
+        lift_lobby=filters["lift_lobby"],
+        job_type=filters["job_type"],
+        last_done_by=filters["last_done_by"],
+        date_ranges=filters["date_ranges"],
+        sort_by=filters["sort_by"],
+        ascending=filters["ascending"],
+    )
 
-    if scope == "Boss Overview":
-        _render_management_overview(dataframe)
-    else:
-        _render_full_management_workspace(dataframe, history_file)
+    with table_col:
+        metric_col1, metric_col2, _ = st.columns([1, 1, 3])
+        metric_col1.metric("Total AED Units", len(dataframe))
+        metric_col2.metric("Matching Units", len(filtered))
+        render_browse_table(filtered)
+        st.divider()
+        render_full_details_editor(filtered)
+
+    st.divider()
+    render_add_and_deactivate(dataframe)
+    render_audit_log(history_file)

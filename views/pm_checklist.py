@@ -624,9 +624,9 @@ def render_pm_form(dataframe: pd.DataFrame) -> None:
                     options=[
                         "Preventive Maintenance (PM)",
                         "Commissioning",
-                        "PM + Battery",
-                        "PM + Glass",
-                        "PM + Battery + Glass",
+                        "PM+batt",
+                        "PM+glass",
+                        "PM +batt +glass",
                     ],
                     key="pm_service_type",
                     label_visibility="collapsed",

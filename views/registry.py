@@ -11,7 +11,7 @@ from config import (
     PM_PLAN_FILE,
     PM_RESPONSES_FILE,
 )
-from views.aed_management import render_aed_management
+from views.aed_management import render_aed_management, render_aed_master_table
 from views.dashboard import render_dashboard
 from views.aed_map import render_aed_map_page
 from views.issues import render_issues_page
@@ -34,8 +34,19 @@ PAGE_RENDERERS: dict[str, PageRenderer] = {
         aed_history_file=AED_HISTORY_FILE,
         issue_history_file=ISSUE_HISTORY_FILE,
     ),
-    "AED Master Data": partial(
+    "AED Management": partial(
         render_aed_management,
+        aed_data_file=AED_DATA_FILE,
+        history_file=AED_HISTORY_FILE,
+    ),
+    "AED Master Table": partial(
+        render_aed_master_table,
+        aed_data_file=AED_DATA_FILE,
+        history_file=AED_HISTORY_FILE,
+    ),
+    # Preserve old bookmarked/session routes from earlier builds.
+    "AED Master Data": partial(
+        render_aed_master_table,
         aed_data_file=AED_DATA_FILE,
         history_file=AED_HISTORY_FILE,
     ),

@@ -1,41 +1,81 @@
-# Latest integrated update
+# Latest integrated update — separate Master Table restored
 
-This build keeps the original navigation, spacing, blue/white visual language and
-page switching. It adds the requirements confirmed in the August 2026 design
-conversation without adding any new Python dependency.
+This build keeps the original navigation style, spacing, blue/white visual
+language and page switching. It adds the confirmed August 2026 requirements
+without adding a new Python dependency.
+
+## Sidebar structure
+
+The Master Table is restored as a complete, independent sidebar function. It is
+not hidden inside the boss page and is not reduced to a homepage control.
+
+Under **ASSET CONTROL**, the sidebar now contains:
+
+- **AED Management** — compact boss overview only
+- **Master Table** — complete original master-data workspace
+- **AED Map** — map, marker interaction and Manage Statuses
+
+The former internal route `AED Master Data` is retained as a hidden compatibility
+alias so older sessions and links still open the Master Table.
 
 ## AED Management
 
-- `Boss Overview`: total units, PM outstanding, open issues, pending verification,
-  attention-required items, monthly PM progress and a compact AED quick view.
-- `Manage Units`: the original detailed filter, direct table editing, review,
-  confirmation, add/deactivate and audit functions remain available.
-- No Data Quality/Data Service dashboard section was added.
+The AED Management page is deliberately compact and aimed at management:
 
-## PM, issues and marker colours
+- total AED units
+- PM outstanding
+- open Issues
+- pending verification
+- attention-required records
+- current-month PM progress
+- a short searchable AED quick view
+
+It does not contain the full editing workspace and does not add a Data
+Quality/Data Service section.
+
+## Master Table
+
+The dedicated Master Table page retains the original functions:
+
+- keyword search and linked filters
+- complete filter reset
+- direct multi-cell table editing
+- difference review before save
+- conflict detection and safe Excel transaction
+- full AED details editing
+- Add AED and Deactivate AED
+- audit, conflict, transaction and Excel write history
+
+Dashboard actions such as **Add / edit AED** and **Open AED master record** now
+open this dedicated page.
+
+## PM, Issues and marker colours
 
 - PM Checklist, Report Issue, Resolution Submission and Resolution Verification
-  now use review/confirmation before formal records are committed.
-- A failed PM item creates its own issue record.
-- Issue workflow automatically controls operational marker status:
-  Issue -> Pending Verification -> Completed only when no unresolved issue remains.
+  use review/confirmation before formal records are committed.
+- Failed PM checklist items can create traceable Issue records.
+- Issue workflow controls operational marker status:
+  Issue -> Pending Verification -> Completed only when no unresolved Issue remains.
 - Planning/custom marker colours save immediately, without a Save button or
-  confirmation, and are kept in system map files rather than the Excel sheet.
-- Marker palette expanded to Blue, Green, Red, Orange, Yellow, Purple, Gray,
-  Pink, Teal, Cyan, Indigo, Lime, Brown, Maroon and Black.
+  confirmation, and remain system-only rather than being written into the company
+  Excel workbook.
+- Marker palette includes Blue, Green, Red, Orange, Yellow, Purple, Gray, Pink,
+  Teal, Cyan, Indigo, Lime, Brown, Maroon and Black.
+- Existing custom status definitions are preserved. `Pending Verification` and
+  `Out of Service` are appended with new IDs rather than replacing existing rows.
 - Status names, colours and workflow definitions remain editable in Manage Statuses.
 
 ## Service Type
 
-The existing `PM` and `Commissioning` positions are retained. These options are
-appended to the end of the list:
+The existing `PM` and `Commissioning` positions are retained. These choices are
+appended at the end of every relevant Service Type list:
 
-- PM + Battery
-- PM + Glass
-- PM + Battery + Glass
+- `PM+batt`
+- `PM+glass`
+- `PM +batt +glass`
 
-Confirmed PM submission updates the master Excel `Job Type` field shown in the
-system as `Service Type`.
+Confirmed PM submission updates the master Excel `Job Type` field, shown in the
+website as `Service Type`.
 
 ## OneDrive
 
@@ -45,5 +85,10 @@ folder. See `ONEDRIVE_SETUP.md` and `.streamlit/secrets.toml.example`.
 ## Verification
 
 - Python compile check passed.
-- 54 automated tests passed.
-- `requirements.txt` is unchanged; no new pip package is required.
+- 60 automated tests passed.
+- All original project files remain present.
+- No original Python function or class was removed.
+- The original Excel workbook and operational CSV records were not modified.
+- Original operational pages remain available.
+- `requirements.txt` and `requirements-dev.txt` are unchanged; no new pip package
+  is required.

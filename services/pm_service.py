@@ -357,9 +357,13 @@ def update_selected_aed(
     service_type_to_master = {
         "Preventive Maintenance (PM)": "PM",
         "Commissioning": "Commissioning",
-        "PM + Battery": "PM + Battery",
-        "PM + Glass": "PM + Glass",
-        "PM + Battery + Glass": "PM + Battery + Glass",
+        "PM+batt": "PM+batt",
+        "PM+glass": "PM+glass",
+        "PM +batt +glass": "PM +batt +glass",
+        # Backward compatibility for records created by the previous draft.
+        "PM + Battery": "PM+batt",
+        "PM + Glass": "PM+glass",
+        "PM + Battery + Glass": "PM +batt +glass",
     }
     job_type = service_type_to_master.get(service_type_full, service_type_full)
     service_report = clean_text(values.get("Service Report ID", ""))

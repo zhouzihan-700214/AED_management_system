@@ -348,7 +348,7 @@ def _render_aed_actions(
             use_container_width=True,
         ):
             st.session_state["management_keyword"] = serial
-            _navigate("AED Master Data")
+            _navigate("AED Master Table")
         if st.button(
             "Report issue for this AED",
             key=f"{key_prefix}_report",
@@ -603,7 +603,7 @@ def render_quick_actions() -> None:
         unsafe_allow_html=True,
     )
     labels = [
-        ("Add / edit AED", "AED Master Data"),
+        ("Add / edit AED", "AED Master Table"),
         ("Open map", "AED Map"),
         ("PM planning", "PM Planning"),
         ("Service records", "Service Records"),
