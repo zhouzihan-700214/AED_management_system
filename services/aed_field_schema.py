@@ -94,8 +94,6 @@ DATE_FIELDS = {
 JOB_TYPE_OPTIONS = [
     "",
     "PM",
-    "PM+batt",
-    "PM+glass",
     "Commissioning",
     "Repair",
     "Incoming Check",
@@ -103,12 +101,17 @@ JOB_TYPE_OPTIONS = [
     "Activation",
     "Consumable Replenishment",
     "Other",
+    # New combined PM types stay at the end of every Service Type list.
+    "PM + Battery",
+    "PM + Glass",
+    "PM + Battery + Glass",
 ]
 
 REPAIRED_OPTIONS = ["", "Yes", "No", "Not applicable"]
 
 FIELD_LABELS = {
     "Model": "Model / Related Object",
+    "Job Type": "Service Type",
     "Service Report e-SR": "Service Report / e-SR",
     "Installed Phase / Month": "Installed Phase / Month",
     "PO Number": "PO Number",

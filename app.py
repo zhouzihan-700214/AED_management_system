@@ -94,7 +94,15 @@ def render_data_sync_control() -> None:
 
     with st.sidebar.expander("Data Source", expanded=False):
         st.caption(f"Excel: {EXCEL_FILE.name}")
+        st.caption(f"Path: {EXCEL_FILE}")
         st.caption(f"Worksheet: {EXCEL_SHEET}")
+        if "onedrive" in str(EXCEL_FILE).casefold():
+            st.success("OneDrive workbook path detected.")
+        else:
+            st.info(
+                "Using the project-local workbook. Put the file in OneDrive/AED System "
+                "or configure .streamlit/secrets.toml to use browser-synced Excel."
+            )
         st.caption(f"Status: {status_label}")
 
         excel_modified = str(status.get("excel_last_modified", "")).strip()

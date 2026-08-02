@@ -12,6 +12,10 @@ from config import (
     AUDIT_HISTORY_FILE,
     CONFLICT_HISTORY_FILE,
     EXCEL_WRITE_HISTORY_FILE,
+    ISSUE_RECORD_FILE,
+    MAP_STATUS_FILE,
+    MAP_UNIT_STATE_FILE,
+    PM_PLAN_FILE,
     TRANSACTION_HISTORY_FILE,
 )
 from services import aed_service
@@ -39,8 +43,17 @@ from services.aed_table_edit_service import (
     validate_table_changes,
 )
 from services.excel_write_service import load_excel_write_history
-from ui.components import page_header
+from services.issue_service import load_issue_records
+from ui.components import page_header, section_label
 from utils.streamlit_utils import rerun_app
+from utils.text_utils import clean_text
+from views.map_modules.status_service import (
+    COLOR_EMOJI,
+    load_plan_records,
+    load_status_definitions,
+    load_unit_state,
+    status_color_lookup,
+)
 
 
 MANAGEMENT_FILTER_KEYS = {
@@ -311,7 +324,7 @@ def _column_config(editor_df: pd.DataFrame | None = None) -> dict[str, Any]:
             "Next PM Date", format="DD/MM/YYYY", required=True
         ),
         "Job Type": st.column_config.SelectboxColumn(
-            "Job Type", options=job_options
+            "Service Type", options=job_options
         ),
         "Repaired?": st.column_config.SelectboxColumn(
             "Repaired?", options=repaired_options
@@ -830,7 +843,7 @@ def render_add_and_deactivate(dataframe: pd.DataFrame) -> None:
                 next_pm = c2.date_input(
                     "Next PM Date*", value=None, format="DD-MM-YYYY", min_value=MIN_DATE, max_value=MAX_DATE
                 )
-                job_type = c1.selectbox("Job Type", options=JOB_TYPE_OPTIONS)
+                job_type = c1.selectbox("Service Type", options=JOB_TYPE_OPTIONS)
                 last_done = c2.text_input("Last Done By")
                 report = c1.text_input("Service Report / e-SR")
                 repaired = c2.selectbox("Repaired?", options=REPAIRED_OPTIONS)
@@ -980,49 +993,266 @@ def render_audit_log(history_file: str | Path) -> None:
             st.dataframe(history.head(20), use_container_width=True, hide_index=True)
 
 
-def render_aed_management(
-    aed_data_file: str | Path,
+def _navigate_management(page_name: str) -> None:
+    st.session_state["page"] = page_name
+    rerun_app()
+
+
+def _selection_rows(event: Any) -> list[int]:
+    selection = getattr(event, "selection", None)
+    if selection is None and isinstance(event, dict):
+        selection = event.get("selection", {})
+    if selection is None:
+        return []
+    if isinstance(selection, dict):
+        return list(selection.get("rows", []))
+    return list(getattr(selection, "rows", []) or [])
+
+
+def _management_snapshot(dataframe: pd.DataFrame) -> dict[str, Any]:
+    try:
+        issues = load_issue_records(ISSUE_RECORD_FILE)
+    except Exception:
+        issues = pd.DataFrame()
+
+    if not issues.empty and "Status" in issues.columns:
+        open_issues = issues[
+            ~issues["Status"].astype(str).str.casefold().isin({"closed", "resolved"})
+        ].copy()
+        pending_verification = open_issues[
+            open_issues["Status"].astype(str).str.casefold().eq("pending verification")
+        ].copy()
+    else:
+        open_issues = pd.DataFrame()
+        pending_verification = pd.DataFrame()
+
+    plans = load_plan_records(PM_PLAN_FILE)
+    current_month = date.today().strftime("%Y-%m")
+    current_plan = (
+        plans[plans["Plan Month"].astype(str).eq(current_month)].copy()
+        if not plans.empty and "Plan Month" in plans.columns
+        else pd.DataFrame()
+    )
+    if current_plan.empty:
+        completed_count = 0
+        outstanding_count = 0
+    else:
+        completed_mask = current_plan["Completed Date"].astype(str).str.strip().ne("")
+        completed_count = int(completed_mask.sum())
+        outstanding_count = int((~completed_mask).sum())
+
+    return {
+        "issues": issues,
+        "open_issues": open_issues,
+        "pending_verification": pending_verification,
+        "current_plan": current_plan,
+        "completed_count": completed_count,
+        "outstanding_count": outstanding_count,
+        "total_units": len(dataframe),
+        "current_month": current_month,
+    }
+
+
+def _render_management_kpis(snapshot: dict[str, Any]) -> None:
+    columns = st.columns(4, gap="small")
+    cards = [
+        (
+            "All AED Units",
+            snapshot["total_units"],
+            "Open the full searchable master table",
+            "management_open_all_units",
+            lambda: st.session_state.__setitem__("aed_management_scope", "Manage Units"),
+        ),
+        (
+            "PM Outstanding",
+            snapshot["outstanding_count"],
+            "Open the current PM plan",
+            "management_open_pm",
+            lambda: st.session_state.__setitem__("page", "PM Planning"),
+        ),
+        (
+            "Open Issues",
+            len(snapshot["open_issues"]),
+            "Review unresolved operational risk",
+            "management_open_issues",
+            lambda: st.session_state.__setitem__("page", "Issues"),
+        ),
+        (
+            "Pending Verification",
+            len(snapshot["pending_verification"]),
+            "Review submitted resolutions",
+            "management_open_pending",
+            lambda: st.session_state.__setitem__("page", "Issues"),
+        ),
+    ]
+
+    for column, (label, value, note, key, action) in zip(columns, cards):
+        with column:
+            if st.button(
+                f"{label}\n\n{value}\n\n{note}",
+                use_container_width=True,
+                key=key,
+                type="secondary",
+            ):
+                action()
+                rerun_app()
+
+
+def _render_attention_required(snapshot: dict[str, Any]) -> None:
+    section_label("ATTENTION REQUIRED")
+    open_issues = snapshot["open_issues"].copy()
+    if open_issues.empty:
+        st.success("No unresolved Issues require management attention.")
+        return
+
+    priority_order = {"Urgent": 0, "High": 1, "Medium": 2, "Low": 3}
+    open_issues["_priority"] = open_issues.get(
+        "Priority", pd.Series(index=open_issues.index, dtype=str)
+    ).map(priority_order).fillna(9)
+    open_issues["_reported"] = pd.to_datetime(
+        open_issues.get("Reported At", ""),
+        format="%d-%m-%Y %H:%M:%S",
+        errors="coerce",
+    )
+    open_issues = open_issues.sort_values(
+        ["_priority", "_reported"], ascending=[True, True]
+    ).head(5)
+
+    display = open_issues.reindex(
+        columns=[
+            "Priority",
+            "Issue ID",
+            "Serial Number",
+            "Location",
+            "Issue Type",
+            "Status",
+            "Due Date",
+        ]
+    ).copy()
+    event = st.dataframe(
+        display,
+        use_container_width=True,
+        hide_index=True,
+        height=min(250, 48 + 36 * len(display)),
+        on_select="rerun",
+        selection_mode="single-row",
+        key="aed_management_attention_table",
+    )
+    selected_rows = _selection_rows(event)
+    if selected_rows:
+        selected_index = selected_rows[0]
+        if 0 <= selected_index < len(open_issues):
+            st.session_state["selected_issue_id"] = clean_text(
+                open_issues.iloc[selected_index].get("Issue ID")
+            )
+
+    action_col, _ = st.columns([1.25, 4])
+    with action_col:
+        if st.button("Open Issue Management", use_container_width=True):
+            _navigate_management("Issues")
+
+
+def _render_pm_progress(snapshot: dict[str, Any]) -> None:
+    section_label("THIS MONTH PM PROGRESS")
+    planned = len(snapshot["current_plan"])
+    completed = snapshot["completed_count"]
+    outstanding = snapshot["outstanding_count"]
+    ratio = completed / planned if planned else 0.0
+
+    with st.container(border=True):
+        metric_col, progress_col, action_col = st.columns([1.15, 3.8, 1.15])
+        with metric_col:
+            st.metric("Completed", f"{completed} / {planned}")
+        with progress_col:
+            st.progress(ratio, text=f"{ratio:.0%} complete · {outstanding} outstanding")
+            st.caption(
+                "The progress bar uses the current month's saved PM plan. "
+                "Planning details remain in PM Planning."
+            )
+        with action_col:
+            if st.button("View PM Plan", use_container_width=True):
+                _navigate_management("PM Planning")
+
+
+def _render_quick_aed_view(dataframe: pd.DataFrame) -> None:
+    section_label("AED QUICK VIEW")
+    search_col, action_col = st.columns([5, 1.25], gap="small")
+    with search_col:
+        keyword = st.text_input(
+            "Quick AED search",
+            placeholder="Search serial number, location or postal code",
+            label_visibility="collapsed",
+            key="management_overview_search",
+        )
+    with action_col:
+        if st.button("Manage All Units", use_container_width=True):
+            st.session_state["aed_management_scope"] = "Manage Units"
+            rerun_app()
+
+    filtered = dataframe.copy()
+    search_text = clean_text(keyword).casefold()
+    if search_text:
+        mask = pd.Series(False, index=filtered.index)
+        for column in ["Serial Number", "Location", "Postal Code"]:
+            if column in filtered.columns:
+                mask |= filtered[column].astype(str).str.casefold().str.contains(
+                    search_text, regex=False, na=False
+                )
+        filtered = filtered.loc[mask]
+
+    state = load_unit_state(MAP_UNIT_STATE_FILE)
+    definitions = load_status_definitions(MAP_STATUS_FILE)
+    if not state.empty:
+        filtered = filtered.merge(
+            state[["Serial Number", "Status", "Color Override"]],
+            on="Serial Number",
+            how="left",
+        )
+    else:
+        filtered["Status"] = ""
+        filtered["Color Override"] = ""
+
+    colour_lookup = status_color_lookup(definitions)
+    filtered["Marker"] = filtered.apply(
+        lambda row: (
+            f"{COLOR_EMOJI.get(clean_text(row.get('Color Override')).title(), '●')} "
+            f"{clean_text(row.get('Color Override')).title()}"
+            if clean_text(row.get("Color Override"))
+            else f"{COLOR_EMOJI.get(colour_lookup.get(clean_text(row.get('Status')).casefold(), 'Gray'), '●')} "
+            f"{clean_text(row.get('Status')) or 'Pending'}"
+        ),
+        axis=1,
+    )
+    display = filtered.reindex(
+        columns=[
+            "Serial Number",
+            "Location",
+            "Postal Code",
+            "Job Type",
+            "Next PM Date",
+            "Marker",
+        ]
+    ).head(10).copy()
+    display = display.rename(columns={"Job Type": "Service Type"})
+    if display.empty:
+        st.info("No AED units match the quick search.")
+    else:
+        st.dataframe(display, use_container_width=True, hide_index=True, height=390)
+
+
+def _render_management_overview(dataframe: pd.DataFrame) -> None:
+    snapshot = _management_snapshot(dataframe)
+    _render_management_kpis(snapshot)
+    st.markdown("<div style='height:0.35rem'></div>", unsafe_allow_html=True)
+    _render_attention_required(snapshot)
+    _render_pm_progress(snapshot)
+    _render_quick_aed_view(dataframe)
+
+
+def _render_full_management_workspace(
+    dataframe: pd.DataFrame,
     history_file: str | Path,
 ) -> None:
-    del aed_data_file
-    initialise_table_editor_state()
-
-    page_header(
-        "AED Master Data",
-        "Search, edit several cells directly, review the differences and save them safely to the IB List.",
-        eyebrow="ASSET CONTROL · DIRECT TABLE EDITING",
-        chip="REVIEW BEFORE SAVE",
-        capabilities=[
-            ("Direct cell editing", "Edit filtered AED rows without opening each unit."),
-            ("Review changes", "See every old and new value before confirming."),
-            ("Conflict protection", "Same-field conflicts stop the whole transaction."),
-        ],
-    )
-
-    writeback_notice = st.session_state.pop("aed_writeback_notice", "")
-    if writeback_notice:
-        st.success(writeback_notice)
-    for warning in st.session_state.pop("aed_writeback_warnings", []):
-        st.warning(warning)
-
-    mode = st.session_state.aed_editor_mode
-    if mode == "edit":
-        render_edit_mode()
-        return
-    if mode == "review":
-        render_review_mode()
-        return
-    if mode != "browse":
-        clear_table_editor_state()
-        st.error("Unknown editor state. The page was reset.")
-        return
-
-    try:
-        dataframe = get_all_units()
-    except Exception as error:
-        st.error(f"Failed to load AED data: {error}")
-        return
-
     table_col, filter_col = st.columns([4.4, 1.35], gap="large")
     with filter_col:
         filters = render_filters(dataframe)
@@ -1049,6 +1279,62 @@ def render_aed_management(
         st.divider()
         render_full_details_editor(filtered)
 
-    st.divider()
     render_add_and_deactivate(dataframe)
     render_audit_log(history_file)
+
+
+def render_aed_management(
+    aed_data_file: str | Path,
+    history_file: str | Path,
+) -> None:
+    del aed_data_file
+    initialise_table_editor_state()
+
+    page_header(
+        "AED Management",
+        "A concise management view of fleet readiness, PM progress and unresolved risk, with the full master-data workspace one click away.",
+        eyebrow="ASSET CONTROL · MANAGEMENT VIEW",
+        chip="OVERVIEW + UNIT MANAGEMENT",
+    )
+
+    writeback_notice = st.session_state.pop("aed_writeback_notice", "")
+    if writeback_notice:
+        st.success(writeback_notice)
+    for warning in st.session_state.pop("aed_writeback_warnings", []):
+        st.warning(warning)
+
+    mode = st.session_state.aed_editor_mode
+    if mode == "edit":
+        render_edit_mode()
+        return
+    if mode == "review":
+        render_review_mode()
+        return
+    if mode != "browse":
+        clear_table_editor_state()
+        st.error("Unknown editor state. The page was reset.")
+        return
+
+    try:
+        dataframe = get_all_units()
+    except Exception as error:
+        st.error(f"Failed to load AED data: {error}")
+        return
+
+    scope_options = ["Boss Overview", "Manage Units"]
+    stored_scope = st.session_state.get("aed_management_scope", "Boss Overview")
+    if stored_scope not in scope_options:
+        stored_scope = "Boss Overview"
+        st.session_state["aed_management_scope"] = stored_scope
+
+    scope = st.segmented_control(
+        "AED Management scope",
+        options=scope_options,
+        key="aed_management_scope",
+        label_visibility="collapsed",
+    ) or "Boss Overview"
+
+    if scope == "Boss Overview":
+        _render_management_overview(dataframe)
+    else:
+        _render_full_management_workspace(dataframe, history_file)

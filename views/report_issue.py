@@ -88,6 +88,7 @@ def clear_report_form_state() -> None:
         "report_issue_prefill",
         "report_issue_search_keyword",
         "report_issue_selected_aed",
+        "report_pending_submission",
     ]:
         st.session_state.pop(key, None)
 
@@ -185,6 +186,71 @@ def apply_map_report_target(dataframe: pd.DataFrame) -> None:
     st.session_state["report_map_target_message"] = (
         f"{serial_number or 'The selected AED'} was loaded from AED Map."
     )
+
+
+def _render_issue_confirmation(
+    issue_csv_file: str | Path,
+    pending: dict[str, Any],
+) -> None:
+    issue_data = dict(pending.get("issue_data", {}))
+    uploaded_files = list(pending.get("uploaded_files", []))
+
+    with st.container(border=True):
+        st.subheader("Confirm Issue Report")
+        st.caption(
+            "Nothing has been saved yet. Confirming creates the Issue record and "
+            "changes the unit marker to the customizable Issue colour."
+        )
+        summary = pd.DataFrame(
+            [
+                ("Serial Number", clean_text(issue_data.get("Serial Number")) or "—"),
+                ("Location", clean_text(issue_data.get("Location")) or "—"),
+                ("Issue Type", clean_text(issue_data.get("Issue Type")) or "—"),
+                ("Priority", clean_text(issue_data.get("Priority")) or "Medium"),
+                ("Reported By", clean_text(issue_data.get("Reported By")) or "—"),
+                ("Evidence Photos", str(len(uploaded_files))),
+                ("Marker Change", "→ Issue colour"),
+            ],
+            columns=["Item", "Value"],
+        )
+        st.dataframe(summary, use_container_width=True, hide_index=True)
+        description = clean_text(issue_data.get("Detailed Description"))
+        if description:
+            st.markdown("**Description**")
+            st.write(description)
+
+        back_col, confirm_col = st.columns(2)
+        with back_col:
+            if st.button(
+                "Back to Edit",
+                use_container_width=True,
+                key="cancel_issue_confirmation",
+            ):
+                st.session_state.pop("report_pending_submission", None)
+                st.rerun()
+        with confirm_col:
+            if st.button(
+                "Confirm and Report",
+                type="primary",
+                use_container_width=True,
+                key="confirm_issue_submission",
+            ):
+                try:
+                    issue_id = create_issue(
+                        issue_csv_file,
+                        issue_data=issue_data,
+                        uploaded_files=uploaded_files,
+                    )
+                except Exception as error:
+                    st.error(f"Failed to save the Issue: {error}")
+                    return
+
+                clear_report_form_state()
+                st.session_state["report_issue_success_message"] = (
+                    f"Issue submitted successfully. Issue ID: {issue_id}. "
+                    "The unit marker now follows the Issue colour definition."
+                )
+                st.rerun()
 
 
 def render_report_issue_page(
@@ -370,23 +436,19 @@ def render_report_issue_page(
             use_container_width=True,
         )
 
-    if not submit_button:
-        return
+    if submit_button:
+        if not clean_text(reported_by):
+            st.warning("Please enter Reported By.")
+            return
+        if not issue_types:
+            st.warning("Please select at least one Issue Type.")
+            return
+        if "Other" in issue_types and not clean_text(detailed_description):
+            st.warning("Please describe the Issue when Other is selected.")
+            return
 
-    if not clean_text(reported_by):
-        st.warning("Please enter Reported By.")
-        return
-    if not issue_types:
-        st.warning("Please select at least one Issue Type.")
-        return
-    if "Other" in issue_types and not clean_text(detailed_description):
-        st.warning("Please describe the Issue when Other is selected.")
-        return
-
-    try:
-        issue_id = create_issue(
-            issue_csv_file,
-            issue_data={
+        st.session_state["report_pending_submission"] = {
+            "issue_data": {
                 "Source": source,
                 "Reported By": reported_by,
                 "Serial Number": serial_number,
@@ -399,14 +461,10 @@ def render_report_issue_page(
                 "Detailed Description": detailed_description,
                 "Priority": priority,
             },
-            uploaded_files=uploaded_files or [],
-        )
-    except Exception as error:
-        st.error(f"Failed to save the Issue: {error}")
-        return
+            "uploaded_files": list(uploaded_files or []),
+        }
 
-    clear_report_form_state()
-    st.session_state["report_issue_success_message"] = (
-        f"Issue submitted successfully. Issue ID: {issue_id}"
-    )
-    st.rerun()
+    pending = st.session_state.get("report_pending_submission")
+    if isinstance(pending, dict):
+        st.divider()
+        _render_issue_confirmation(issue_csv_file, pending)

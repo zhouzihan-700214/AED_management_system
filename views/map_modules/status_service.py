@@ -51,6 +51,14 @@ COLOR_PALETTE = {
     "Yellow": "#FACC15",
     "Purple": "#7C3AED",
     "Gray": "#6B7280",
+    "Pink": "#DB2777",
+    "Teal": "#0F766E",
+    "Cyan": "#06B6D4",
+    "Indigo": "#4338CA",
+    "Lime": "#84CC16",
+    "Brown": "#92400E",
+    "Maroon": "#881337",
+    "Black": "#111827",
 }
 
 COLOR_EMOJI = {
@@ -61,6 +69,14 @@ COLOR_EMOJI = {
     "Yellow": "🟡",
     "Purple": "🟣",
     "Gray": "⚪",
+    "Pink": "🌸",
+    "Teal": "◆",
+    "Cyan": "💠",
+    "Indigo": "🔷",
+    "Lime": "🟩",
+    "Brown": "🟫",
+    "Maroon": "♦",
+    "Black": "⚫",
 }
 
 DEFAULT_STATUSES = [
@@ -102,22 +118,38 @@ DEFAULT_STATUSES = [
         "Marker Color": "Red",
         "Active": "Yes",
         "Display Order": "5",
-        "Workflow Role": "None",
+        "Workflow Role": "Issue",
     },
     {
         "Status ID": "STATUS-006",
-        "Status Name": "Overdue",
-        "Marker Color": "Orange",
+        "Status Name": "Pending Verification",
+        "Marker Color": "Yellow",
         "Active": "Yes",
         "Display Order": "6",
-        "Workflow Role": "None",
+        "Workflow Role": "Pending Verification",
     },
     {
         "Status ID": "STATUS-007",
+        "Status Name": "Out of Service",
+        "Marker Color": "Black",
+        "Active": "Yes",
+        "Display Order": "7",
+        "Workflow Role": "Out of Service",
+    },
+    {
+        "Status ID": "STATUS-008",
+        "Status Name": "Overdue",
+        "Marker Color": "Orange",
+        "Active": "Yes",
+        "Display Order": "8",
+        "Workflow Role": "None",
+    },
+    {
+        "Status ID": "STATUS-009",
         "Status Name": "Not Applicable",
         "Marker Color": "Gray",
         "Active": "Yes",
-        "Display Order": "7",
+        "Display Order": "9",
         "Workflow Role": "None",
     },
 ]
@@ -212,12 +244,29 @@ def normalise_status_definitions(
             row["Workflow Role"]
         ).title()
 
+        inferred_roles = {
+            "pending": "Pending",
+            "completed": "Completed",
+            "issue": "Issue",
+            "issue open": "Issue",
+            "pending verification": "Pending Verification",
+            "out of service": "Out of Service",
+        }
+        if workflow_role in {"", "None"}:
+            workflow_role = inferred_roles.get(name.casefold(), "None")
+
         if workflow_role not in {
             "Pending",
             "Completed",
+            "Issue",
+            "Pending Verification",
+            "Out Of Service",
+            "Out of Service",
             "None",
         }:
             workflow_role = "None"
+        if workflow_role == "Out Of Service":
+            workflow_role = "Out of Service"
 
         rows.append(
             {
@@ -283,6 +332,48 @@ def load_status_definitions(
         )
 
     result = normalise_status_definitions(dataframe)
+
+    # Add any operational roles introduced by newer versions without removing
+    # the user's existing names, colours or display order.
+    existing_roles = {
+        clean_text(value)
+        for value in result.get("Workflow Role", pd.Series(dtype=str))
+        if clean_text(value)
+    }
+    missing_defaults = [
+        row for row in DEFAULT_STATUSES
+        if clean_text(row["Workflow Role"]) in {
+            "Pending", "Completed", "Issue", "Pending Verification", "Out of Service"
+        }
+        and clean_text(row["Workflow Role"]) not in existing_roles
+    ]
+    if missing_defaults:
+        existing_ids = {
+            clean_text(value)
+            for value in result.get("Status ID", pd.Series(dtype=str))
+            if clean_text(value)
+        }
+        additions = []
+        id_source = result.copy()
+        for default_row in missing_defaults:
+            row = dict(default_row)
+            candidate_id = next_status_id(id_source)
+            while candidate_id in existing_ids:
+                number = safe_int(candidate_id.split("-")[-1], 0) + 1
+                candidate_id = f"STATUS-{number:03d}"
+            row["Status ID"] = candidate_id
+            existing_ids.add(candidate_id)
+            additions.append(row)
+            id_source = pd.concat(
+                [id_source, pd.DataFrame([row], columns=STATUS_COLUMNS)],
+                ignore_index=True,
+            )
+        result = pd.concat(
+            [result, pd.DataFrame(additions, columns=STATUS_COLUMNS)],
+            ignore_index=True,
+        )
+        result = normalise_status_definitions(result)
+
     save_status_definitions(result, path)
     return result
 
@@ -593,6 +684,7 @@ def validate_and_prepare_status_editor(
         .fillna("None")
         .astype(str)
         .str.title()
+        .replace({"Out Of Service": "Out of Service"})
     )
 
     names_casefold = candidate[
@@ -623,7 +715,14 @@ def validate_and_prepare_status_editor(
 
     invalid_roles = sorted(
         set(candidate["Workflow Role"])
-        - {"Pending", "Completed", "None"}
+        - {
+            "Pending",
+            "Completed",
+            "Issue",
+            "Pending Verification",
+            "Out of Service",
+            "None",
+        }
     )
 
     if invalid_roles:
@@ -632,7 +731,12 @@ def validate_and_prepare_status_editor(
             + ", ".join(invalid_roles)
         )
 
-    for required_role in ["Pending", "Completed"]:
+    for required_role in [
+        "Pending",
+        "Completed",
+        "Issue",
+        "Pending Verification",
+    ]:
         active_role_count = len(
             candidate[
                 candidate["Workflow Role"].eq(required_role)

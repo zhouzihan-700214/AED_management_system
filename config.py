@@ -1,4 +1,6 @@
 from pathlib import Path
+import os
+import tomllib
 
 PROJECT_ROOT = Path(__file__).resolve().parent
 BASE_DIR = PROJECT_ROOT  # Backward-compatible alias used by older modules.
@@ -8,7 +10,52 @@ BASE_DIR = PROJECT_ROOT  # Backward-compatible alias used by older modules.
 # ---------------------------------------------------------------------------
 EXTERNAL_DATA_DIR = PROJECT_ROOT / "external_data"
 DATA_DIR = PROJECT_ROOT / "data"
-EXCEL_FILE = EXTERNAL_DATA_DIR / "IB_list_TEST.xlsx"
+
+
+def _configured_excel_path() -> Path:
+    """Resolve the IB List, preferring the user's own OneDrive copy.
+
+    Priority: AED_EXCEL_FILE environment variable, .streamlit/secrets.toml,
+    an existing ``OneDrive*/AED System/IB_list_TEST.xlsx`` file, then the
+    project-local testing workbook. No additional package is required.
+    """
+
+    environment_value = os.getenv("AED_EXCEL_FILE", "").strip()
+    if environment_value:
+        return Path(environment_value).expanduser()
+
+    secrets_file = PROJECT_ROOT / ".streamlit" / "secrets.toml"
+    if secrets_file.exists():
+        try:
+            with secrets_file.open("rb") as handle:
+                secrets = tomllib.load(handle)
+            configured = str(
+                secrets.get("excel", {}).get("file_path", "")
+                or secrets.get("AED_EXCEL_FILE", "")
+            ).strip()
+            if configured:
+                return Path(configured).expanduser()
+        except (OSError, ValueError, TypeError):
+            pass
+
+    home = Path.home()
+    candidates = [
+        home / "OneDrive" / "AED System" / "IB_list_TEST.xlsx",
+        home / "OneDrive - Personal" / "AED System" / "IB_list_TEST.xlsx",
+    ]
+    candidates.extend(
+        folder / "AED System" / "IB_list_TEST.xlsx"
+        for folder in home.glob("OneDrive*")
+        if folder.is_dir()
+    )
+    for candidate in candidates:
+        if candidate.exists():
+            return candidate
+
+    return EXTERNAL_DATA_DIR / "IB_list_TEST.xlsx"
+
+
+EXCEL_FILE = _configured_excel_path()
 EXCEL_SHEET = "Sheet1"
 
 AED_CACHE_FILE = PROJECT_ROOT / "aed_data.csv"
@@ -20,7 +67,7 @@ SYNC_LOCK_FILE = EXCEL_OPERATION_LOCK_FILE  # Stage 4 unified lock
 TEMP_DIR = PROJECT_ROOT / "temp"
 CACHE_BACKUP_DIR = PROJECT_ROOT / "backups" / "aed_cache"
 BACKUP_DIR = CACHE_BACKUP_DIR  # Backward-compatible alias.
-LOCK_FILE = EXTERNAL_DATA_DIR / "IB_list_TEST.xlsx.lock"
+LOCK_FILE = EXCEL_FILE.with_suffix(EXCEL_FILE.suffix + ".lock")
 
 SERIAL_COLUMN = "Serial Number"
 

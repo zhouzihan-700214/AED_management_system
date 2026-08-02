@@ -1,2 +1,1 @@
 ﻿Operation ID,Timestamp,User,Session ID,Operation Type,Source Page,Serial Number,Field,Original Value,Current Value,Desired Value,Result,Message
-15d548f8-8980-463a-ac89-ba2e422dc10a,2026-08-01T14:56:57+08:00,Zihan,4e7ffaf4-c3ac-41e4-8150-b8254b478330,BATCH_UPDATE,AED Management Table,X16B817028,Battery Expiry Date,01-03-1935,01-03-1935,01-03-2035,Success,Updated 1 AED unit(s) in one Excel transaction.

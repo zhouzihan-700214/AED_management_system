@@ -516,6 +516,10 @@ def _render_resolution_submission_form(
                 "or test evidence."
             ),
         )
+        resolution_confirmed = st.checkbox(
+            "I confirm this resolution is ready for verification. The unit marker will change to the Pending Verification colour.",
+            key=f"{key_prefix}_resolution_confirmed",
+        )
 
         submitted = st.form_submit_button(
             "Submit for Verification",
@@ -524,6 +528,9 @@ def _render_resolution_submission_form(
         )
 
     if not submitted:
+        return
+    if not resolution_confirmed:
+        st.error("Confirm the resolution and resulting marker status before submitting.")
         return
 
     try:
@@ -544,7 +551,7 @@ def _render_resolution_submission_form(
         return
 
     _save_success(
-        f"Resolution {submission_id} was submitted. {issue_id} is now Pending Verification."
+        f"Resolution {submission_id} was submitted. {issue_id} is now Pending Verification and the unit marker follows that colour."
     )
 
 
@@ -719,7 +726,9 @@ def _render_verification_form(
         return
 
     if approve:
-        _save_success(f"{issue_id} was verified and closed.")
+        _save_success(
+            f"{issue_id} was verified and closed. The unit marker was recalculated from all remaining Issues."
+        )
     else:
         _save_success(
             f"{issue_id} was rejected and reopened for additional work."

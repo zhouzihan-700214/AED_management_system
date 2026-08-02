@@ -7,11 +7,14 @@ from pathlib import Path
 import pandas as pd
 import streamlit as st
 
-from config import AED_DATA_FILE
+from config import AED_DATA_FILE, ISSUE_RECORD_FILE
 from services.aed_repository import get_all_units
+from services.issue_service import create_issue
+from services.unit_color_service import sync_unit_from_issue_records
 from services.pm_service import (
     append_pm_response,
     build_response,
+    failed_checklist_items,
     parse_optional_date,
     record_value,
     update_selected_aed,
@@ -397,11 +400,196 @@ def render_search_section(dataframe: pd.DataFrame) -> None:
             st.warning("No matching AED was found.")
 
 
+def _commit_pm_submission(
+    dataframe: pd.DataFrame,
+    selected_index: int,
+    response: dict[str, str],
+) -> tuple[str, list[str]]:
+    """Commit the reviewed PM response, linked Issues and system-only colour."""
+
+    audit_user = clean_text(
+        st.session_state.get("audit_user", response.get("Technician", ""))
+    )
+    session_id = clean_text(st.session_state.get("session_id", ""))
+    loaner_unit = clean_text(response.get("Loaner Unit", "No"))
+    warnings: list[str] = []
+
+    if loaner_unit == "Yes":
+        response["Operation ID"] = str(uuid.uuid4())
+        response["Submission Status"] = "COMMITTED"
+        response["Excel Update Status"] = "NOT_REQUIRED_LOANER"
+        response["Submitted By"] = audit_user
+        append_pm_response(response)
+        message = (
+            f"PM response {response['PM Response ID']} was saved. "
+            "The IB List was not updated because this is a loaner unit."
+        )
+    else:
+        excel_result = update_selected_aed(
+            dataframe=dataframe,
+            original_index=int(selected_index),
+            values=response,
+            user=audit_user,
+            session_id=session_id,
+        )
+        if excel_result.status == "conflict":
+            conflict_lines = [
+                f"{field}: opened '{values.get('original', '')}', "
+                f"current '{values.get('current', '')}', "
+                f"checklist '{values.get('desired', '')}'"
+                for field, values in excel_result.conflicts.items()
+            ]
+            raise ValueError(
+                excel_result.message + "\n" + "\n".join(conflict_lines)
+            )
+        if not (excel_result.success or excel_result.status == "already_applied"):
+            raise ValueError(
+                "The PM response was not saved because the IB List update failed: "
+                + excel_result.message
+            )
+
+        response["Operation ID"] = excel_result.operation_id
+        response["Submission Status"] = "COMMITTED"
+        response["Excel Update Status"] = (
+            "UPDATED" if excel_result.success else "ALREADY_APPLIED"
+        )
+        response["Submitted By"] = audit_user
+        append_pm_response(response)
+        message = (
+            f"PM response {response['PM Response ID']} was saved and the selected "
+            "AED record was safely updated in the IB List."
+        )
+
+    failures = failed_checklist_items(response)
+    issue_ids: list[str] = []
+    for failure in failures:
+        try:
+            issue_ids.append(
+                create_issue(
+                    ISSUE_RECORD_FILE,
+                    issue_data={
+                        "Source": "PM Checklist",
+                        "Reported By": audit_user or response.get("Technician", ""),
+                        "Serial Number": response.get("AED Serial Number", ""),
+                        "Model": clean_text(st.session_state.get("pm_selected_model", "")),
+                        "Location": response.get("AED Location", ""),
+                        "Postal Code": response.get("Postal Code", ""),
+                        "Lift Lobby": response.get("Lift Lobby", ""),
+                        "Is Loaner": response.get("Loaner Unit", "No"),
+                        "Issue Type": failure["Issue Type"],
+                        "Detailed Description": (
+                            f"Automatically created from PM Checklist. "
+                            f"{failure['Field']}: {failure['Value']}. "
+                            f"{failure['Description']}"
+                        ),
+                        "Priority": failure["Priority"],
+                    },
+                    uploaded_files=[],
+                )
+            )
+        except Exception as error:
+            warnings.append(
+                f"Could not create the Issue for {failure['Field']}: {error}"
+            )
+
+    if not failures:
+        role = sync_unit_from_issue_records(
+            ISSUE_RECORD_FILE,
+            response.get("AED Serial Number", ""),
+            clear_role="Completed",
+        )
+        message += (
+            " Marker status is Completed."
+            if role == "Completed"
+            else f" Marker status remains {role} because another Issue is still open."
+        )
+    elif issue_ids:
+        message += f" {len(issue_ids)} Issue record(s) were created from failed items."
+
+    return message, warnings
+
+
+def _render_pm_confirmation(
+    dataframe: pd.DataFrame,
+    pending: dict[str, object],
+) -> None:
+    response = dict(pending.get("response", {}))
+    selected_index = int(pending.get("selected_index", -1))
+    failures = failed_checklist_items(response)
+
+    with st.container(border=True):
+        st.subheader("Confirm PM Submission")
+        st.caption(
+            "Nothing has been written yet. Review the final values and the resulting "
+            "marker colour before confirming."
+        )
+        summary = pd.DataFrame(
+            [
+                ("Serial Number", response.get("AED Serial Number", "")),
+                ("Service Date", response.get("Service Date", "")),
+                ("Service Type", response.get("Service Type", "")),
+                ("Technician", response.get("Technician", "")),
+                ("Checklist Result", "Failed items found" if failures else "All checks passed"),
+                (
+                    "Marker Change",
+                    "→ Issue colour" if failures else "→ Completed colour (unless another Issue remains)",
+                ),
+            ],
+            columns=["Item", "Value"],
+        )
+        st.dataframe(summary, use_container_width=True, hide_index=True)
+        if failures:
+            st.warning(
+                f"{len(failures)} failed item(s) will create separate Issue records."
+            )
+            st.dataframe(
+                pd.DataFrame(failures)[["Field", "Value", "Issue Type", "Priority"]],
+                use_container_width=True,
+                hide_index=True,
+            )
+        else:
+            st.success("No failed checklist item was detected.")
+
+        back_col, confirm_col = st.columns([1, 1])
+        with back_col:
+            if st.button("Back to Checklist", use_container_width=True):
+                st.session_state.pop("pm_pending_submission", None)
+                rerun_app()
+        with confirm_col:
+            if st.button(
+                "Confirm and Save",
+                type="primary",
+                use_container_width=True,
+            ):
+                try:
+                    message, warnings = _commit_pm_submission(
+                        dataframe, selected_index, response
+                    )
+                except (OSError, ValueError, IndexError, KeyError) as error:
+                    st.error(f"Failed to save the PM response: {error}")
+                    return
+                st.session_state.pop("pm_pending_submission", None)
+                st.session_state["pm_submission_success"] = message
+                st.session_state["pm_submission_warnings"] = warnings
+                rerun_app()
+
+
 def render_pm_form(dataframe: pd.DataFrame) -> None:
     selected_index = st.session_state.get("pm_original_index")
 
     if selected_index is None:
         st.info("Search for and select one AED before completing the checklist.")
+        return
+
+    success_message = st.session_state.pop("pm_submission_success", "")
+    if success_message:
+        st.success(success_message)
+    for warning in st.session_state.pop("pm_submission_warnings", []):
+        st.warning(warning)
+
+    pending = st.session_state.get("pm_pending_submission")
+    if isinstance(pending, dict):
+        _render_pm_confirmation(dataframe, pending)
         return
 
     with st.container(border=True):
@@ -436,6 +624,9 @@ def render_pm_form(dataframe: pd.DataFrame) -> None:
                     options=[
                         "Preventive Maintenance (PM)",
                         "Commissioning",
+                        "PM + Battery",
+                        "PM + Glass",
+                        "PM + Battery + Glass",
                     ],
                     key="pm_service_type",
                     label_visibility="collapsed",
@@ -707,7 +898,7 @@ def render_pm_form(dataframe: pd.DataFrame) -> None:
             submit_col, spacer_col = st.columns([2.0, 6.3])
             with submit_col:
                 submitted = st.form_submit_button(
-                    "Submit PM Response",
+                    "Review PM Submission",
                     type="primary",
                     use_container_width=True,
                 )
@@ -756,61 +947,11 @@ def render_pm_form(dataframe: pd.DataFrame) -> None:
                 ),
             )
 
-            try:
-                audit_user = clean_text(st.session_state.get("audit_user", technician))
-                session_id = clean_text(st.session_state.get("session_id", ""))
-
-                if loaner_unit == "Yes":
-                    response["Operation ID"] = str(uuid.uuid4())
-                    response["Submission Status"] = "COMMITTED"
-                    response["Excel Update Status"] = "NOT_REQUIRED_LOANER"
-                    response["Submitted By"] = audit_user
-                    append_pm_response(response)
-                    st.success(
-                        f"PM response {response['PM Response ID']} was saved. "
-                        "The master AED file was not updated because this is a loaner unit."
-                    )
-                else:
-                    excel_result = update_selected_aed(
-                        dataframe=dataframe,
-                        original_index=int(selected_index),
-                        values=response,
-                        user=audit_user,
-                        session_id=session_id,
-                    )
-                    if excel_result.status == "conflict":
-                        st.error(excel_result.message)
-                        conflict_rows = []
-                        for field, values in excel_result.conflicts.items():
-                            conflict_rows.append({
-                                "Field": field,
-                                "Opened Value": values.get("original", ""),
-                                "Current Excel": values.get("current", ""),
-                                "Checklist Value": values.get("desired", ""),
-                            })
-                        st.dataframe(pd.DataFrame(conflict_rows), use_container_width=True, hide_index=True)
-                        return
-                    if not (excel_result.success or excel_result.status == "already_applied"):
-                        st.error(
-                            "The PM response was not saved because the IB List update failed: "
-                            + excel_result.message
-                        )
-                        return
-
-                    response["Operation ID"] = excel_result.operation_id
-                    response["Submission Status"] = "COMMITTED"
-                    response["Excel Update Status"] = (
-                        "UPDATED" if excel_result.success else "ALREADY_APPLIED"
-                    )
-                    response["Submitted By"] = audit_user
-                    append_pm_response(response)
-                    st.success(
-                        f"PM response {response['PM Response ID']} was saved after "
-                        "the selected AED master record was safely updated in Excel."
-                    )
-
-            except (OSError, ValueError, IndexError, KeyError) as error:
-                st.error(f"Failed to save the PM response: {error}")
+            st.session_state["pm_pending_submission"] = {
+                "selected_index": int(selected_index),
+                "response": response,
+            }
+            rerun_app()
 
 
 def render_report_issue_card() -> None:

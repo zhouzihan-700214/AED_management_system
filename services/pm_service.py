@@ -56,6 +56,49 @@ PM_RESPONSE_COLUMNS = [
     "Submitted At",
 ]
 
+
+PM_FAILURE_RULES = [
+    ("Cabinet Inspection", "Cabinet inspection failed", "Cabinet condition did not pass the PM checklist."),
+    ("Cabinet Alarm", "Cabinet alarm not working", "Cabinet alarm did not pass the PM checklist."),
+    ("AED Physical Condition", "AED physical condition failed", "The AED physical condition did not pass inspection."),
+    ("Self Test Result", "AED self-test failed", "The AED self-test result was Fail."),
+    ("AED Cover", "Cover broken", "The AED cover did not pass inspection."),
+    ("Adult Pads Within Expiry Date", "Adult pads expired", "Adult pads were recorded as outside the expiry date."),
+    ("Pediatric Pads Within Expiry Date", "Pediatric pads expired", "Pediatric pads were recorded as outside the expiry date."),
+    ("AED Signage", "Signage", "AED signage did not pass the final site check."),
+    ("Final Check", "Final check failed", "The final readiness check did not pass."),
+]
+
+
+def failed_checklist_items(response: dict[str, Any]) -> list[dict[str, str]]:
+    """Return one traceable Issue candidate for each failed PM checklist item."""
+
+    failures: list[dict[str, str]] = []
+    for field, issue_type, description in PM_FAILURE_RULES:
+        value = clean_text(response.get(field, ""))
+        failed = (
+            value.casefold() == "fail"
+            or (field in {
+                "Adult Pads Within Expiry Date",
+                "Pediatric Pads Within Expiry Date",
+                "AED Signage",
+                "Final Check",
+            } and value.casefold() == "no")
+        )
+        if failed:
+            failures.append({
+                "Field": field,
+                "Value": value,
+                "Issue Type": issue_type,
+                "Description": description,
+                "Priority": (
+                    "High"
+                    if field in {"Self Test Result", "Final Check"}
+                    else "Medium"
+                ),
+            })
+    return failures
+
 PM_PLAN_COLUMNS = [
     "Operation ID",
     "Plan ID",
@@ -311,7 +354,14 @@ def update_selected_aed(
 
     service_date_text = clean_text(values["Service Date"])
     service_type_full = clean_text(values["Service Type"])
-    job_type = "PM" if service_type_full == "Preventive Maintenance (PM)" else "Commissioning"
+    service_type_to_master = {
+        "Preventive Maintenance (PM)": "PM",
+        "Commissioning": "Commissioning",
+        "PM + Battery": "PM + Battery",
+        "PM + Glass": "PM + Glass",
+        "PM + Battery + Glass": "PM + Battery + Glass",
+    }
+    job_type = service_type_to_master.get(service_type_full, service_type_full)
     service_report = clean_text(values.get("Service Report ID", ""))
 
     interval_text = record_value(original_row, PM_INTERVAL_COLUMN)

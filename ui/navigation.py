@@ -112,7 +112,7 @@ def render_navigation(issue_record_file: str | Path) -> None:
         (
             "ASSET CONTROL",
             [
-                ("AED Master Data", "▣  AED Master Data"),
+                ("AED Master Data", "▣  AED Management"),
                 ("AED Map", "⌖  AED Map"),
             ],
         ),

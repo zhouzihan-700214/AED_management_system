@@ -117,8 +117,8 @@ def render_status_editor_contents(
     plan_records = load_plan_records(plan_file)
 
     st.caption(
-        "Add, rename, reorder or disable statuses. "
-        "Pending and Completed workflow roles remain protected."
+        "Add, rename, reorder or disable statuses and choose from the expanded colour palette. "
+        "Pending, Completed, Issue and Pending Verification workflow roles remain protected."
     )
 
     editor_dataframe = definitions.copy()
@@ -164,6 +164,9 @@ def render_status_editor_contents(
                     "None",
                     "Pending",
                     "Completed",
+                    "Issue",
+                    "Pending Verification",
+                    "Out of Service",
                 ],
                 required=True,
             ),

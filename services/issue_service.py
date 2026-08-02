@@ -8,6 +8,7 @@ import uuid
 import pandas as pd
 
 from services.csv_storage import atomic_write_csv
+from services.unit_color_service import set_unit_workflow_role, sync_unit_from_issue_records
 from utils.text_utils import clean_text
 
 
@@ -537,6 +538,14 @@ def create_issue(
         comments=clean_text(issue_data.get("Detailed Description")),
     )
 
+    # Marker state is system-only and never written into the company Excel.
+    issue_base = Path(issue_csv_file).resolve().parent
+    set_unit_workflow_role(
+        record.get("Serial Number", ""),
+        "Issue",
+        state_file=issue_base / "map_unit_state.csv",
+        status_file=issue_base / "map_status_definitions.csv",
+    )
     return issue_id
 
 
@@ -819,6 +828,10 @@ def submit_issue_resolution(
         comments="\n".join(history_comments),
     )
 
+    sync_unit_from_issue_records(
+        issue_csv_file,
+        records.at[row_index, "Serial Number"],
+    )
     return submission_id
 
 
@@ -929,6 +942,11 @@ def verify_issue_resolution(
             f"Verification decision: {decision}\n"
             f"Verification notes: {notes}"
         ),
+    )
+
+    sync_unit_from_issue_records(
+        issue_csv_file,
+        records.at[row_index, "Serial Number"],
     )
 
 def get_resolution_submissions_for_issue(

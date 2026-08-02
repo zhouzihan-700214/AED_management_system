@@ -378,6 +378,13 @@ def render_selected_aed_panel(
             )
         ).title()
 
+        role_lookup = {
+            clean_text(row["Status Name"]).casefold(): clean_text(row["Workflow Role"])
+            for _, row in definitions.iterrows()
+        }
+        current_role = role_lookup.get(status.casefold(), "None")
+        manual_colour_allowed = current_role in {"Pending", "None", ""}
+
         color_options = [
             "Automatic",
             *list(COLOR_PALETTE.keys()),
@@ -399,54 +406,79 @@ def render_selected_aed_panel(
                 ),
             )
 
-        color_key = (
-            f"marker_color_choice_{map_type}_"
+        color_widget_key = (
+            f"marker_color_select_{map_type}_"
             f"{plan_id}_{serial}"
         )
-
-        if color_key not in st.session_state:
-            st.session_state[color_key] = (
-                current_override
-                if current_override in COLOR_PALETTE
-                else "Automatic"
-            )
+        saved_color_choice = (
+            current_override
+            if current_override in COLOR_PALETTE
+            else "Automatic"
+        )
+        if color_widget_key not in st.session_state:
+            st.session_state[color_widget_key] = saved_color_choice
+        if not manual_colour_allowed:
+            st.session_state[color_widget_key] = "Automatic"
 
         with color_column:
             chosen_color = st.selectbox(
                 "Marker Color",
                 options=color_options,
-                index=color_options.index(
-                    st.session_state[color_key]
-                ),
                 format_func=lambda value: (
                     (
                         f"Automatic ({status_color_name})"
                         if value == "Automatic"
-                        else f"{COLOR_EMOJI.get(value, '⚪')} {value}"
+                        else f"{COLOR_EMOJI.get(value, '●')} {value}"
                     )
                 ),
-                key=(
-                    f"marker_color_select_{map_type}_"
-                    f"{plan_id}_{serial}"
+                key=color_widget_key,
+                disabled=not manual_colour_allowed,
+                help=(
+                    "Planning colours save immediately and do not update the Excel sheet."
+                    if manual_colour_allowed
+                    else "This operational colour is controlled by PM and Issue status. Change its definition in Manage Statuses."
                 ),
             )
-            st.session_state[color_key] = chosen_color
+
+        # Planning colour changes are deliberately auto-saved: no Save button,
+        # no confirmation dialog, and no Excel write-back.
+        if manual_colour_allowed and chosen_color != saved_color_choice:
+            try:
+                save_selected_color(
+                    map_type=map_type,
+                    plan_id=plan_id,
+                    serial=serial,
+                    selected_color=chosen_color,
+                    state_file=state_file,
+                    plan_file=plan_file,
+                )
+                st.session_state["aed_map_notice"] = (
+                    f"{serial} marker colour changed to {chosen_color}."
+                )
+                rerun_app()
+            except (ValueError, OSError) as error:
+                st.error(str(error))
 
         st.markdown(
             '<div class="aed-control-caption">'
-            "Status and marker color are saved together."
-            "</div>",
+            + (
+                "Planning colour saves immediately. Status changes still require confirmation."
+                if manual_colour_allowed
+                else "Operational colour follows the workflow status and cannot be overridden here."
+            )
+            + "</div>",
             unsafe_allow_html=True,
         )
 
         if st.button(
-            "Save Status & Color",
+            "Confirm Status Change",
             type="primary",
             use_container_width=True,
             key=(
                 f"save_status_color_{map_type}_"
                 f"{plan_id}_{serial}"
             ),
+            disabled=chosen_status == status,
         ):
             try:
                 save_selected_status(
@@ -458,19 +490,19 @@ def render_selected_aed_panel(
                     state_file=state_file,
                     plan_file=plan_file,
                 )
-                save_selected_color(
-                    map_type=map_type,
-                    plan_id=plan_id,
-                    serial=serial,
-                    selected_color=chosen_color,
-                    state_file=state_file,
-                    plan_file=plan_file,
-                )
+                chosen_role = role_lookup.get(chosen_status.casefold(), "None")
+                if chosen_role not in {"Pending", "None", ""}:
+                    save_selected_color(
+                        map_type=map_type,
+                        plan_id=plan_id,
+                        serial=serial,
+                        selected_color="Automatic",
+                        state_file=state_file,
+                        plan_file=plan_file,
+                    )
 
-                st.session_state[
-                    "aed_map_notice"
-                ] = (
-                    f"{serial} status and marker color were saved."
+                st.session_state["aed_map_notice"] = (
+                    f"{serial} status changed from {status or '—'} to {chosen_status}."
                 )
                 rerun_app()
 

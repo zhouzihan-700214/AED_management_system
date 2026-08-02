@@ -58,7 +58,7 @@ def create_marker_icon(
         ),
         text_color=(
             "#101828"
-            if color_name == "Yellow"
+            if color_name in {"Yellow", "Lime", "Cyan"}
             else "#FFFFFF"
         ),
         background_color=color_hex,
