@@ -13,9 +13,11 @@ from config import (
     CONFLICT_HISTORY_FILE,
     EXCEL_WRITE_HISTORY_FILE,
     ISSUE_RECORD_FILE,
+    ISSUE_RESOLUTION_FILE,
     MAP_STATUS_FILE,
     MAP_UNIT_STATE_FILE,
     PM_PLAN_FILE,
+    PM_RESPONSES_FILE,
     TRANSACTION_HISTORY_FILE,
 )
 from services import aed_service
@@ -44,6 +46,12 @@ from services.aed_table_edit_service import (
 )
 from services.excel_write_service import load_excel_write_history
 from services.issue_service import load_issue_records
+from services.unit_profile_service import (
+    append_manual_service_remark,
+    build_service_history,
+    format_manual_service_remark,
+    load_unit_issues,
+)
 from ui.components import page_header, section_label
 from utils.streamlit_utils import rerun_app
 from utils.text_utils import clean_text
@@ -1179,13 +1187,768 @@ def _render_pm_progress(snapshot: dict[str, Any]) -> None:
                 _navigate_management("PM Planning")
 
 
+def _unit_profile_field_groups() -> list[tuple[str, list[str]]]:
+    return [
+        (
+            "Basic Information",
+            [
+                "Serial Number",
+                "Model",
+                "Installation Date",
+                "Installed Phase / Month",
+                "PO Number",
+                "Zone",
+                "Repaired?",
+            ],
+        ),
+        (
+            "Location",
+            [
+                "Block / Locations",
+                "Street Name",
+                "Location",
+                "Postal Code",
+                "Level",
+                "Lift Lobby",
+                "OneMap Address",
+                "Latitude",
+                "Longitude",
+                "Geocoding Status",
+            ],
+        ),
+        (
+            "Pads and Battery",
+            [
+                "Adult Pads Replacement Date",
+                "Adult Pads Expiry Date",
+                "Adult Pads Lot Number",
+                "Pediatric Pads Replacement Date",
+                "Pediatric Pads Expiry Date",
+                "Pediatric Pads Lot Number",
+                "Battery Replacement History",
+                "Battery Expiry Date",
+            ],
+        ),
+        (
+            "PM and Service",
+            [
+                "PM Completed Date",
+                "Next PM Date",
+                "PM Interval Months",
+                "Job Type",
+                "Last Done By",
+                "Service Report e-SR",
+                "Patrol Schedule",
+                "PM Schedule (H1)",
+                "PM Schedule (H2)",
+            ],
+        ),
+        ("Remarks", ["Remarks"]),
+    ]
+
+
+def _profile_value(master_row: pd.Series, field: str) -> str:
+    return clean_text(master_row.get(field)) or "—"
+
+
+def _render_profile_information(master_row: pd.Series) -> None:
+    """Show every unit field in readable sections rather than one dense table."""
+    for section_name, fields in _unit_profile_field_groups():
+        available = [field for field in fields if field in master_row.index]
+        if not available:
+            continue
+        with st.container(border=True):
+            st.markdown(f"#### {section_name}")
+            columns = st.columns(2, gap="large")
+            for index, field in enumerate(available):
+                label = FIELD_LABELS.get(field, field)
+                value = _profile_value(master_row, field)
+                with columns[index % 2]:
+                    st.caption(label)
+                    st.write(value)
+
+
+def _profile_review_table(changes: dict[str, str], originals: dict[str, str]) -> pd.DataFrame:
+    return pd.DataFrame(
+        [
+            {
+                "Field": FIELD_LABELS.get(field, field),
+                "Current": originals.get(field, ""),
+                "New": value,
+            }
+            for field, value in changes.items()
+        ]
+    )
+
+
+def _profile_operation_feedback(result: Any) -> None:
+    if result.status == "conflict":
+        st.error(result.message)
+        rows = [
+            {
+                "Field": FIELD_LABELS.get(field, field),
+                "Opened Value": values.get("original", ""),
+                "Current Excel": values.get("current", ""),
+                "Your Value": values.get("desired", ""),
+            }
+            for field, values in result.conflicts.items()
+        ]
+        if rows:
+            st.dataframe(pd.DataFrame(rows), width="stretch", hide_index=True)
+    elif result.status in {"no_changes", "already_applied"}:
+        st.info(result.message)
+    elif result.excel_updated:
+        st.warning(result.message)
+    else:
+        st.error(result.message)
+
+
+def _profile_edit_pending_key(serial: str) -> str:
+    return f"profile_edit_pending::{serial}"
+
+
+def _service_add_pending_key(serial: str) -> str:
+    return f"profile_service_pending::{serial}"
+
+
+def _render_profile_edit(master_row: pd.Series, serial: str) -> None:
+    """Edit the official IB List fields directly from the unit profile."""
+    pending_key = _profile_edit_pending_key(serial)
+    pending = st.session_state.get(pending_key)
+
+    st.caption(
+        "Edit the official unit record here. Changes are reviewed before they are "
+        "written to the same OneDrive Excel file used by Master Table."
+    )
+
+    if pending:
+        st.markdown("#### Review profile changes")
+        st.dataframe(
+            _profile_review_table(pending["changes"], pending["originals"]),
+            width="stretch",
+            hide_index=True,
+        )
+        for warning in pending.get("warnings", []):
+            st.warning(warning)
+        confirm_col, cancel_col, _ = st.columns([1.3, 1.1, 3])
+        if confirm_col.button(
+            "Confirm and update Excel",
+            type="primary",
+            width="stretch",
+            key=f"profile_edit_confirm_{serial}",
+        ):
+            with st.spinner("Checking the latest OneDrive file and saving..."):
+                result = update_unit(
+                    serial_number=serial,
+                    changes=pending["changes"],
+                    original_values=pending["originals"],
+                    user=st.session_state.get("audit_user", ""),
+                    session_id=st.session_state.get("session_id", ""),
+                    source_page="AED Management Unit Profile",
+                )
+            if result.success:
+                st.session_state.pop(pending_key, None)
+                st.session_state["aed_writeback_notice"] = result.message
+                st.session_state["aed_writeback_warnings"] = list(result.warnings)
+                rerun_app()
+            _profile_operation_feedback(result)
+        if cancel_col.button(
+            "Cancel",
+            width="stretch",
+            key=f"profile_edit_cancel_{serial}",
+        ):
+            st.session_state.pop(pending_key, None)
+            rerun_app()
+        return
+
+    current = {
+        field: _snapshot_value(field, master_row.get(field, ""))
+        for field in DETAIL_EDITABLE_COLUMNS
+    }
+
+    with st.form(f"profile_edit_form_{serial}", clear_on_submit=False):
+        with st.container(border=True):
+            st.markdown("#### Basic and location information")
+            c1, c2 = st.columns(2, gap="large")
+            c1.text_input("Serial Number", value=serial, disabled=True)
+            model = c2.text_input("Model / Related Object", value=current.get("Model", ""))
+            installation = c1.date_input(
+                "Installation Date",
+                value=_date_input_value(current.get("Installation Date", "")),
+                format="DD-MM-YYYY",
+                min_value=MIN_DATE,
+                max_value=MAX_DATE,
+            )
+            phase = c2.text_input(
+                "Installed Phase / Month",
+                value=current.get("Installed Phase / Month", ""),
+            )
+            po_number = c1.text_input("PO Number", value=current.get("PO Number", ""))
+            zone = c2.text_input("Zone", value=current.get("Zone", ""))
+            block = c1.text_input(
+                "Block / Locations", value=current.get("Block / Locations", "")
+            )
+            street = c2.text_input("Street Name", value=current.get("Street Name", ""))
+            postal = c1.text_input(
+                "Postal Code", value=current.get("Postal Code", ""), max_chars=6
+            )
+            level = c2.text_input("Level", value=current.get("Level", ""))
+            lobby = c1.text_input("Lift Lobby", value=current.get("Lift Lobby", ""))
+
+        with st.container(border=True):
+            st.markdown("#### Pads and battery")
+            st.caption("Adult pads")
+            c1, c2, c3 = st.columns(3, gap="small")
+            adult_replacement = c1.date_input(
+                "Replacement Date",
+                value=_date_input_value(current.get("Adult Pads Replacement Date", "")),
+                format="DD-MM-YYYY",
+                min_value=MIN_DATE,
+                max_value=MAX_DATE,
+                key=f"profile_adult_replace_{serial}",
+            )
+            adult_expiry = c2.date_input(
+                "Expiry Date",
+                value=_date_input_value(current.get("Adult Pads Expiry Date", "")),
+                format="DD-MM-YYYY",
+                min_value=MIN_DATE,
+                max_value=MAX_DATE,
+                key=f"profile_adult_expiry_{serial}",
+            )
+            adult_lot = c3.text_input(
+                "Lot Number",
+                value=current.get("Adult Pads Lot Number", ""),
+                key=f"profile_adult_lot_{serial}",
+            )
+
+            st.caption("Pediatric pads")
+            c1, c2, c3 = st.columns(3, gap="small")
+            pediatric_replacement = c1.date_input(
+                "Replacement Date",
+                value=_date_input_value(current.get("Pediatric Pads Replacement Date", "")),
+                format="DD-MM-YYYY",
+                min_value=MIN_DATE,
+                max_value=MAX_DATE,
+                key=f"profile_pedi_replace_{serial}",
+            )
+            pediatric_expiry = c2.date_input(
+                "Expiry Date",
+                value=_date_input_value(current.get("Pediatric Pads Expiry Date", "")),
+                format="DD-MM-YYYY",
+                min_value=MIN_DATE,
+                max_value=MAX_DATE,
+                key=f"profile_pedi_expiry_{serial}",
+            )
+            pediatric_lot = c3.text_input(
+                "Lot Number",
+                value=current.get("Pediatric Pads Lot Number", ""),
+                key=f"profile_pedi_lot_{serial}",
+            )
+
+            c1, c2 = st.columns(2, gap="large")
+            battery_expiry = c1.date_input(
+                "Battery Expiry Date",
+                value=_date_input_value(current.get("Battery Expiry Date", "")),
+                format="DD-MM-YYYY",
+                min_value=MIN_DATE,
+                max_value=MAX_DATE,
+            )
+            battery_history = c2.text_area(
+                "Battery Replacement History",
+                value=current.get("Battery Replacement History", ""),
+                height=96,
+            )
+
+        with st.container(border=True):
+            st.markdown("#### PM and service")
+            c1, c2 = st.columns(2, gap="large")
+            completed = c1.date_input(
+                "PM Completed Date",
+                value=_date_input_value(current.get("PM Completed Date", "")),
+                format="DD-MM-YYYY",
+                min_value=MIN_DATE,
+                max_value=MAX_DATE,
+            )
+            next_pm = c2.date_input(
+                "Next PM Date",
+                value=_date_input_value(current.get("Next PM Date", "")),
+                format="DD-MM-YYYY",
+                min_value=MIN_DATE,
+                max_value=MAX_DATE,
+            )
+            job_options = _select_options_with_current(
+                JOB_TYPE_OPTIONS, current.get("Job Type", "")
+            )
+            job_type = c1.selectbox(
+                "Service Type",
+                options=job_options,
+                index=job_options.index(current.get("Job Type", "")),
+            )
+            last_done = c2.text_input(
+                "Last Done By", value=current.get("Last Done By", "")
+            )
+            report = c1.text_input(
+                "Service Report / e-SR",
+                value=current.get("Service Report e-SR", ""),
+            )
+            repaired_options = _select_options_with_current(
+                REPAIRED_OPTIONS, current.get("Repaired?", "")
+            )
+            repaired = c2.selectbox(
+                "Repaired?",
+                options=repaired_options,
+                index=repaired_options.index(current.get("Repaired?", "")),
+            )
+            remarks = st.text_area(
+                "Remarks",
+                value=current.get("Remarks", ""),
+                height=140,
+                help="Existing service-history lines are preserved unless you edit them here.",
+            )
+
+        submitted = st.form_submit_button(
+            "Review profile changes", type="primary", width="stretch"
+        )
+
+    if not submitted:
+        return
+
+    entered: dict[str, Any] = {
+        "Installation Date": aed_service.format_date(installation),
+        "Model": model,
+        "Installed Phase / Month": phase,
+        "PO Number": po_number,
+        "Zone": zone,
+        "Block / Locations": block,
+        "Street Name": street,
+        "Postal Code": postal,
+        "Level": level,
+        "Lift Lobby": lobby,
+        "Adult Pads Replacement Date": aed_service.format_date(adult_replacement),
+        "Adult Pads Expiry Date": aed_service.format_date(adult_expiry),
+        "Adult Pads Lot Number": adult_lot,
+        "Pediatric Pads Replacement Date": aed_service.format_date(pediatric_replacement),
+        "Pediatric Pads Expiry Date": aed_service.format_date(pediatric_expiry),
+        "Pediatric Pads Lot Number": pediatric_lot,
+        "Battery Replacement History": battery_history,
+        "Battery Expiry Date": aed_service.format_date(battery_expiry),
+        "PM Completed Date": aed_service.format_date(completed),
+        "Next PM Date": aed_service.format_date(next_pm),
+        "Job Type": job_type,
+        "Last Done By": last_done,
+        "Service Report e-SR": report,
+        "Repaired?": repaired,
+        "Remarks": remarks,
+    }
+
+    changes: dict[str, str] = {}
+    originals: dict[str, str] = {}
+    try:
+        for field, raw_value in entered.items():
+            new_value = normalize_value(field, raw_value)
+            old_value = current.get(field, "")
+            if new_value != old_value:
+                changes[field] = new_value
+                originals[field] = old_value
+    except ValueError as error:
+        st.error(str(error))
+        return
+
+    if not changes:
+        st.info("No changes were detected.")
+        return
+
+    change_rows = [
+        {
+            "serial_number": serial.upper(),
+            "field": field,
+            "original_value": originals[field],
+            "desired_value": value,
+        }
+        for field, value in changes.items()
+    ]
+    errors, warnings = validate_table_changes(
+        pd.DataFrame([master_row.to_dict()]), change_rows
+    )
+    if errors:
+        for error in errors:
+            st.error(error)
+        return
+
+    st.session_state[pending_key] = {
+        "changes": changes,
+        "originals": originals,
+        "warnings": warnings,
+    }
+    rerun_app()
+
+
+def _calculate_next_pm(service_date: date, interval_months: int) -> str:
+    return (pd.Timestamp(service_date) + pd.DateOffset(months=interval_months)).strftime(
+        "%d-%m-%Y"
+    )
+
+
+def _render_add_service_record(master_row: pd.Series, serial: str) -> None:
+    """Add a durable service-history entry through the unit profile."""
+    pending_key = _service_add_pending_key(serial)
+    pending = st.session_state.get(pending_key)
+
+    st.caption(
+        "Add an individual service event without opening the full PM checklist. "
+        "The record is appended to this unit's Remarks in OneDrive Excel and appears "
+        "immediately in Service History."
+    )
+
+    if pending:
+        record = pending["record"]
+        with st.container(border=True):
+            st.markdown("#### Review new service record")
+            summary = st.columns(3, gap="small")
+            summary[0].metric("Date", record["Service Date"])
+            summary[1].metric("Service Type", record["Service Type"])
+            summary[2].metric("Status", record["Status"])
+            st.caption(
+                f"Technician: {record['Technician'] or '—'} · "
+                f"Reference: {record['Reference'] or '—'}"
+            )
+            st.write(record["Details"] or "No additional details.")
+
+        if pending["changes"]:
+            st.markdown("**IB List fields that will also be updated**")
+            st.dataframe(
+                _profile_review_table(pending["changes"], pending["originals"]),
+                width="stretch",
+                hide_index=True,
+            )
+
+        confirm_col, cancel_col, _ = st.columns([1.35, 1, 3])
+        if confirm_col.button(
+            "Confirm add record",
+            type="primary",
+            width="stretch",
+            key=f"profile_service_confirm_{serial}",
+        ):
+            with st.spinner("Saving the service record to OneDrive Excel..."):
+                result = update_unit(
+                    serial_number=serial,
+                    changes=pending["changes"],
+                    original_values=pending["originals"],
+                    user=st.session_state.get("audit_user", ""),
+                    session_id=st.session_state.get("session_id", ""),
+                    source_page="AED Management Add Service Record",
+                )
+            if result.success:
+                st.session_state.pop(pending_key, None)
+                st.session_state["aed_writeback_notice"] = result.message
+                st.session_state["aed_writeback_warnings"] = list(result.warnings)
+                rerun_app()
+            _profile_operation_feedback(result)
+        if cancel_col.button(
+            "Cancel",
+            width="stretch",
+            key=f"profile_service_cancel_{serial}",
+        ):
+            st.session_state.pop(pending_key, None)
+            rerun_app()
+        return
+
+    service_options = [option for option in JOB_TYPE_OPTIONS if clean_text(option)]
+    default_technician = clean_text(st.session_state.get("audit_user"))
+    default_interval = clean_text(master_row.get("PM Interval Months"))
+    try:
+        interval_value = max(1, int(default_interval or 12))
+    except ValueError:
+        interval_value = 12
+
+    with st.form(f"profile_add_service_form_{serial}", clear_on_submit=False):
+        with st.container(border=True):
+            st.markdown("#### Service details")
+            c1, c2 = st.columns(2, gap="large")
+            service_date = c1.date_input(
+                "Service Date", value=date.today(), format="DD-MM-YYYY"
+            )
+            service_type = c2.selectbox("Service Type", options=service_options)
+            technician = c1.text_input("Technician", value=default_technician)
+            reference = c2.text_input(
+                "Service Report / e-SR",
+                placeholder="Optional reference number",
+            )
+            status = c1.selectbox(
+                "Record Status",
+                options=["Completed", "Pending", "Follow-up Required"],
+            )
+            update_latest = c2.checkbox(
+                "Update latest service fields",
+                value=True,
+                help="Updates Service Type, Last Done By and e-SR in the IB List.",
+            )
+            update_pm_dates = c1.checkbox(
+                "Update PM Completed and Next PM dates",
+                value=False,
+                help="Use this only when this record represents a completed PM.",
+            )
+            interval_months = c2.number_input(
+                "Next PM interval (months)",
+                min_value=1,
+                max_value=60,
+                value=interval_value,
+                step=1,
+            )
+            details = st.text_area(
+                "Work performed / notes*",
+                placeholder=(
+                    "Describe the service, replacement, test result or follow-up needed."
+                ),
+                height=140,
+            )
+
+        submitted = st.form_submit_button(
+            "Review new service record", type="primary", width="stretch"
+        )
+
+    if not submitted:
+        return
+    if not clean_text(details):
+        st.error("Work performed / notes is required.")
+        return
+    if update_pm_dates and not clean_text(service_type).casefold().startswith("pm"):
+        st.error("PM dates can only be updated for a PM service type.")
+        return
+
+    service_date_text = service_date.strftime("%d-%m-%Y")
+    service_line = format_manual_service_remark(
+        service_date=service_date_text,
+        service_type=service_type,
+        technician=technician,
+        reference=reference,
+        status=status,
+        details=details,
+    )
+
+    changes: dict[str, str] = {}
+    originals: dict[str, str] = {}
+
+    old_remarks = _snapshot_value("Remarks", master_row.get("Remarks", ""))
+    new_remarks = append_manual_service_remark(old_remarks, service_line)
+    changes["Remarks"] = new_remarks
+    originals["Remarks"] = old_remarks
+
+    if update_latest:
+        latest_values = {
+            "Job Type": service_type,
+            "Last Done By": clean_text(technician),
+            "Service Report e-SR": clean_text(reference),
+        }
+        for field, value in latest_values.items():
+            old_value = _snapshot_value(field, master_row.get(field, ""))
+            new_value = normalize_value(field, value)
+            if new_value != old_value:
+                changes[field] = new_value
+                originals[field] = old_value
+
+    if update_pm_dates:
+        pm_values = {
+            "PM Completed Date": service_date_text,
+            "Next PM Date": _calculate_next_pm(service_date, int(interval_months)),
+        }
+        for field, value in pm_values.items():
+            old_value = _snapshot_value(field, master_row.get(field, ""))
+            if value != old_value:
+                changes[field] = value
+                originals[field] = old_value
+
+    service_type_key = clean_text(service_type).casefold()
+    if "batt" in service_type_key or "battery" in service_type_key:
+        old_history = _snapshot_value(
+            "Battery Replacement History",
+            master_row.get("Battery Replacement History", ""),
+        )
+        dates = [clean_text(item) for item in old_history.split(";") if clean_text(item)]
+        if service_date_text not in dates:
+            dates.append(service_date_text)
+        new_history = "; ".join(dates)
+        if new_history != old_history:
+            changes["Battery Replacement History"] = new_history
+            originals["Battery Replacement History"] = old_history
+
+    st.session_state[pending_key] = {
+        "record": {
+            "Service Date": service_date_text,
+            "Service Type": service_type,
+            "Technician": clean_text(technician),
+            "Reference": clean_text(reference),
+            "Status": status,
+            "Details": clean_text(details),
+        },
+        "changes": changes,
+        "originals": originals,
+    }
+    rerun_app()
+
+
+def _render_service_history(master_row: pd.Series, serial: str) -> None:
+    history = build_service_history(
+        master_row,
+        serial,
+        pm_responses_file=PM_RESPONSES_FILE,
+        issue_record_file=ISSUE_RECORD_FILE,
+        resolution_file=ISSUE_RESOLUTION_FILE,
+    )
+    if history.empty:
+        st.info(
+            "No service record has been saved for this unit yet. Use Add Service "
+            "to create the first record."
+        )
+        return
+
+    st.caption(
+        "Newest first. Records combine PM checklists, issue resolutions, current IB "
+        "List fields, older Remarks and records added directly from this profile."
+    )
+    for row_index, (_, row) in enumerate(history.head(20).iterrows()):
+        with st.container(border=True):
+            top = st.columns([1.1, 1.8, 1.1], gap="small")
+            top[0].markdown(f"**{clean_text(row.get('Service Date')) or 'Date not recorded'}**")
+            top[1].markdown(f"**{clean_text(row.get('Service Type')) or 'Service'}**")
+            top[2].caption(clean_text(row.get("Status")) or "Recorded")
+            meta = []
+            if clean_text(row.get("Technician")):
+                meta.append(f"Technician: {clean_text(row.get('Technician'))}")
+            if clean_text(row.get("Reference")):
+                meta.append(f"Reference: {clean_text(row.get('Reference'))}")
+            if clean_text(row.get("Source")):
+                meta.append(f"Source: {clean_text(row.get('Source'))}")
+            if meta:
+                st.caption(" · ".join(meta))
+            if clean_text(row.get("Details")):
+                st.write(clean_text(row.get("Details")))
+
+    if len(history) > 20:
+        st.caption(f"Showing the newest 20 of {len(history)} records.")
+    with st.expander("Open service history as a table"):
+        st.dataframe(history, width="stretch", hide_index=True)
+
+
+def _render_issue_history(serial: str) -> None:
+    issues = load_unit_issues(serial, issue_record_file=ISSUE_RECORD_FILE)
+    if issues.empty:
+        st.success("No Issue record has been linked to this unit.")
+        return
+
+    display_columns = [
+        "Issue ID",
+        "Reported At",
+        "Issue Type",
+        "Priority",
+        "Status",
+        "Current Assignee",
+        "Resolution Submitted At",
+        "Closed At",
+        "Resolution Notes",
+    ]
+    display_columns = [column for column in display_columns if column in issues.columns]
+    st.dataframe(
+        issues.reindex(columns=display_columns),
+        hide_index=True,
+        width="stretch",
+        height=min(480, 48 + 37 * len(issues)),
+        key=f"unit_issue_history_{serial}",
+    )
+    if st.button(
+        "Open Issue Management",
+        width="content",
+        key=f"profile_open_issues_{serial}",
+    ):
+        _navigate_management("Issues")
+
+
+def _render_unit_profile(master_row: pd.Series, marker_text: str) -> None:
+    serial = clean_text(master_row.get("Serial Number"))
+    if not serial:
+        return
+
+    model = clean_text(master_row.get("Model")) or "Model not recorded"
+    location = clean_text(master_row.get("Location")) or clean_text(
+        master_row.get("Block / Locations")
+    )
+    service_type = clean_text(master_row.get("Job Type")) or "—"
+    next_pm = clean_text(master_row.get("Next PM Date")) or "—"
+    issues = load_unit_issues(serial, issue_record_file=ISSUE_RECORD_FILE)
+    open_issue_count = 0
+    if not issues.empty and "Status" in issues.columns:
+        open_issue_count = int(
+            (~issues["Status"].astype(str).str.casefold().isin({"closed", "resolved"})).sum()
+        )
+
+    st.markdown("<div style='height:0.45rem'></div>", unsafe_allow_html=True)
+    with st.container(border=True):
+        title_col, action_col = st.columns([3.8, 2.2], gap="large")
+        with title_col:
+            st.markdown(f"### {serial}")
+            st.caption(f"{model} · {location or 'Location not recorded'}")
+            summary_cols = st.columns(4, gap="small")
+            summary_cols[0].metric("Marker", marker_text or "Pending")
+            summary_cols[1].metric("Service Type", service_type)
+            summary_cols[2].metric("Next PM", next_pm)
+            summary_cols[3].metric("Open Issues", open_issue_count)
+        with action_col:
+            c1, c2 = st.columns(2, gap="small")
+            if c1.button(
+                "Fill PM Checklist", width="stretch", key=f"profile_pm_{serial}"
+            ):
+                st.session_state["map_pm_target"] = {
+                    "Serial Number": serial,
+                    "Postal Code": clean_text(master_row.get("Postal Code")),
+                }
+                _navigate_management("PM Checklist")
+            if c2.button(
+                "Report Issue", width="stretch", key=f"profile_issue_{serial}"
+            ):
+                st.session_state["map_report_target"] = {
+                    "Serial Number": serial,
+                    "Postal Code": clean_text(master_row.get("Postal Code")),
+                }
+                _navigate_management("Report Issue")
+            if st.button(
+                "Open in Master Table", width="stretch", key=f"profile_master_{serial}"
+            ):
+                reset_management_filters()
+                st.session_state["management_keyword"] = serial
+                _navigate_management("AED Master Table")
+
+        section = st.radio(
+            "Unit profile section",
+            options=[
+                "Overview",
+                "Edit Details",
+                "Service History",
+                "Add Service",
+                "Issues",
+            ],
+            horizontal=True,
+            label_visibility="collapsed",
+            key=f"profile_section_{serial}",
+        )
+
+        if section == "Overview":
+            _render_profile_information(master_row)
+        elif section == "Edit Details":
+            _render_profile_edit(master_row, serial)
+        elif section == "Service History":
+            _render_service_history(master_row, serial)
+        elif section == "Add Service":
+            _render_add_service_record(master_row, serial)
+        else:
+            _render_issue_history(serial)
+
 def _render_quick_aed_view(dataframe: pd.DataFrame) -> None:
-    section_label("AED QUICK VIEW")
+    section_label("AED UNIT PROFILES")
     search_col, action_col = st.columns([5, 1.25], gap="small")
     with search_col:
         keyword = st.text_input(
             "Quick AED search",
-            placeholder="Search serial number, location or postal code",
+            placeholder="Search serial number, location or postal code, then click one unit",
             label_visibility="collapsed",
             key="management_overview_search",
         )
@@ -1227,7 +1990,9 @@ def _render_quick_aed_view(dataframe: pd.DataFrame) -> None:
         ),
         axis=1,
     )
-    display = filtered.reindex(
+
+    profile_rows = filtered.head(20).copy().reset_index(drop=True)
+    display = profile_rows.reindex(
         columns=[
             "Serial Number",
             "Location",
@@ -1236,13 +2001,63 @@ def _render_quick_aed_view(dataframe: pd.DataFrame) -> None:
             "Next PM Date",
             "Marker",
         ]
-    ).head(10).copy()
+    ).copy()
     display = display.rename(columns={"Job Type": "Service Type"})
+
     if display.empty:
         st.info("No AED units match the quick search.")
-    else:
-        st.dataframe(display, use_container_width=True, hide_index=True, height=390)
+        return
 
+    st.caption(
+        "Click one row to open the unit's complete information, service history and Issue history."
+    )
+    event = st.dataframe(
+        display,
+        use_container_width=True,
+        hide_index=True,
+        height=min(430, 48 + 36 * len(display)),
+        on_select="rerun",
+        selection_mode="single-row",
+        key="aed_management_unit_profile_table",
+    )
+    selected_rows = _selection_rows(event)
+    if selected_rows:
+        selected_index = selected_rows[0]
+        if 0 <= selected_index < len(profile_rows):
+            st.session_state["management_profile_serial"] = clean_text(
+                profile_rows.iloc[selected_index].get("Serial Number")
+            )
+
+    selected_serial = clean_text(st.session_state.get("management_profile_serial"))
+    visible_serials = set(
+        profile_rows.get("Serial Number", pd.Series(dtype=str))
+        .astype(str)
+        .str.strip()
+        .tolist()
+    )
+    if selected_serial and selected_serial not in visible_serials:
+        st.session_state.pop("management_profile_serial", None)
+        selected_serial = ""
+
+    if not selected_serial:
+        st.info("Select an AED unit above to open its profile.")
+        return
+
+    master_matches = dataframe[
+        dataframe["Serial Number"].astype(str).str.strip().eq(selected_serial)
+    ]
+    profile_matches = profile_rows[
+        profile_rows["Serial Number"].astype(str).str.strip().eq(selected_serial)
+    ]
+    if master_matches.empty:
+        st.warning("The selected AED is no longer available in the current Master data.")
+        st.session_state.pop("management_profile_serial", None)
+        return
+
+    marker_text = ""
+    if not profile_matches.empty:
+        marker_text = clean_text(profile_matches.iloc[0].get("Marker"))
+    _render_unit_profile(master_matches.iloc[0], marker_text)
 
 def _render_management_overview(dataframe: pd.DataFrame) -> None:
     snapshot = _management_snapshot(dataframe)
