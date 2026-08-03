@@ -24,7 +24,7 @@ from services.microsoft_auth_service import get_access_token
 
 GRAPH_ROOT = "https://graph.microsoft.com/v1.0"
 REQUEST_TIMEOUT_SECONDS = 45
-METADATA_CHECK_TTL_SECONDS = 30
+METADATA_CHECK_TTL_SECONDS = 8
 
 
 class OneDriveError(RuntimeError):

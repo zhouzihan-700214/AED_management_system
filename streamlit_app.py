@@ -47,7 +47,7 @@ st.set_page_config(
     initial_sidebar_state="expanded",
 )
 
-
+AUTO_REFRESH_INTERVAL = "10s"
 
 
 def initialise_user_session() -> None:
@@ -215,6 +215,28 @@ def render_data_sync_control() -> None:
                 st.info(result.message)
 
 
+@st.fragment(run_every=AUTO_REFRESH_INTERVAL)
+def auto_refresh_onedrive_data() -> None:
+    """Reload the website automatically when the OneDrive workbook changes."""
+    if not ONEDRIVE_CLOUD_ENABLED:
+        return
+    if not get_authentication_status().authenticated:
+        return
+
+    result = ensure_cache_current(force=False)
+    if result.status == "failed":
+        st.session_state["aed_auto_sync_error"] = result.message
+        return
+
+    st.session_state.pop("aed_auto_sync_error", None)
+    if result.changed:
+        st.session_state["aed_sync_notice"] = (
+            "A newer OneDrive Excel version was detected and loaded automatically."
+        )
+        st.session_state["aed_sync_warnings"] = list(result.warnings)
+        st.rerun()
+
+
 def sync_coordinates_after_csv_change() -> None:
     """
     Check aed_data.csv once for each detected file version.
@@ -275,6 +297,7 @@ render_navigation(ISSUE_RECORD_FILE)
 render_microsoft_connection_control()
 render_identity_control()
 render_data_sync_control()
+auto_refresh_onedrive_data()
 
 recovery_notice = st.session_state.pop("recovery_notice", "")
 if recovery_notice:
