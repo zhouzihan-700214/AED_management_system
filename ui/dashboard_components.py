@@ -515,23 +515,23 @@ def render_issue_pipeline(summary: dict[str, int]) -> None:
 
 
 def render_readiness_summary(summary: dict[str, int]) -> None:
-    st.markdown(
-        f"""
-        <div class="ops-summary-card">
-            <strong>Asset readiness</strong>
-            <div class="ops-summary-list">
-                {_detail_rows([
-                    ('Adult pads due', summary['adult_pads']),
-                    ('Pediatric pads due', summary['pediatric_pads']),
-                    ('Battery due', summary['battery']),
-                    ('Missing PM date', summary['missing_next_pm']),
-                    ('Missing coordinates', summary['missing_coordinates']),
-                ])}
-            </div>
-        </div>
-        """,
-        unsafe_allow_html=True,
-    )
+    """Backward-compatible replacement for the former Asset Readiness card."""
+
+    with st.container(border=True):
+        st.markdown("**AED unit profiles**")
+        st.caption(
+            "Search any AED, open its complete record, edit current details, "
+            "review service history or add a new service record."
+        )
+        if st.button(
+            "Open AED unit profiles",
+            key="dashboard_open_unit_profiles_legacy_card",
+            type="primary",
+            width="stretch",
+        ):
+            st.session_state["dashboard_view"] = "Unit profiles"
+            st.session_state.pop("dashboard_profile_serial", None)
+            rerun_app()
 
 
 def render_unit_profile_entry(snapshot: dict[str, Any]) -> None:

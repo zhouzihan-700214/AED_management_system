@@ -772,7 +772,7 @@ def calculate_dashboard_kpis(
             {"label": "UNASSIGNED", "value": str(issue_summary["unassigned"]), "note": "Open issues without owner", "tone": "coral" if issue_summary["unassigned"] else "green"},
         ]
 
-    if view == "Asset readiness":
+    if view == "Unit profiles":
         return [
             {"label": "PADS EXPIRING", "value": str(readiness_summary["adult_pads"] + readiness_summary["pediatric_pads"]), "note": "Within 90 days or expired", "tone": "amber"},
             {"label": "BATTERY EXPIRING", "value": str(readiness_summary["battery"]), "note": "Within 90 days or expired", "tone": "amber"},
@@ -967,7 +967,7 @@ def apply_dashboard_filters(
     category_map = {
         "PM": {"PM"},
         "Issues": {"Issue", "Verification"},
-        "Asset readiness": {"Readiness", "Data"},
+        "Unit profiles": {"Readiness", "Data"},
     }
     categories = category_map.get(view)
     if categories:
