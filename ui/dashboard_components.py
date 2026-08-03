@@ -535,37 +535,74 @@ def render_readiness_summary(summary: dict[str, int]) -> None:
 
 
 def render_unit_profile_entry(snapshot: dict[str, Any]) -> None:
-    """Compact homepage entry that replaces the former readiness summary card."""
+    """Direct searchable profile entry replacing the former readiness card."""
+
+    aed_data = snapshot.get("aed_data", pd.DataFrame())
+    records: list[tuple[str, str]] = []
+    if isinstance(aed_data, pd.DataFrame) and not aed_data.empty:
+        for _, row in aed_data.iterrows():
+            serial = clean_text(row.get("Serial Number"))
+            if not serial:
+                continue
+            model = clean_text(row.get("Model")) or "Model not recorded"
+            location = (
+                clean_text(row.get("Location"))
+                or clean_text(row.get("Block / Locations"))
+                or "Location not recorded"
+            )
+            records.append((serial, f"{serial} · {model} · {location}"))
+
+    records.sort(key=lambda item: item[0].casefold())
+    serial_options = [serial for serial, _ in records]
+    label_lookup = dict(records)
 
     with st.container(border=True):
         st.markdown("**AED unit profiles**")
         st.caption(
-            "Open one AED's complete electronic record, edit current details, review service history or add a service record."
+            "Search one unit, then open its complete editable electronic record."
         )
-        st.markdown(
-            _detail_rows(
-                [
-                    ("Registered AEDs", snapshot["data_health"]["total_units"]),
-                    ("Open issues", snapshot["issue_summary"]["open"]),
-                    ("Profiles available", "All registered units"),
-                ]
-            ),
-            unsafe_allow_html=True,
+
+        selected_serial = st.selectbox(
+            "Select AED unit",
+            options=serial_options,
+            index=None,
+            format_func=lambda serial: label_lookup.get(serial, serial),
+            placeholder="Type Serial Number, model or location",
+            label_visibility="collapsed",
+            key="dashboard_profile_quick_selector",
+            disabled=not bool(serial_options),
         )
+
+        if not serial_options:
+            st.info("No registered AED profiles are available.")
+            return
+
         if st.button(
-            "Open AED unit profiles",
-            key="dashboard_open_unit_profiles",
+            "Open selected AED profile",
+            key="dashboard_open_selected_unit_profile",
             type="primary",
-            use_container_width=True,
+            width="stretch",
+            disabled=not bool(selected_serial),
+        ):
+            st.session_state["dashboard_view"] = "Unit profiles"
+            st.session_state["dashboard_profile_serial"] = clean_text(selected_serial)
+            st.session_state["dashboard_search"] = clean_text(selected_serial)
+            rerun_app()
+
+        if st.button(
+            "Browse all unit profiles",
+            key="dashboard_open_all_unit_profiles",
+            width="stretch",
         ):
             st.session_state["dashboard_view"] = "Unit profiles"
             st.session_state.pop("dashboard_profile_serial", None)
+            st.session_state["dashboard_search"] = ""
             rerun_app()
 
 
 def render_operational_summaries(snapshot: dict[str, Any], period: str) -> None:
     st.markdown(
-        '<div class="ops-section-heading"><div><span>CONTROL SUMMARY</span><h2>Progress and unit access</h2></div></div>',
+        '<div class="ops-section-heading"><div><span>CONTROL SUMMARY</span><h2>Progress and AED unit profiles</h2></div></div>',
         unsafe_allow_html=True,
     )
     pm_col, issue_col, profile_col = st.columns(3, gap="small")

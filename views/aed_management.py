@@ -1943,121 +1943,136 @@ def _render_unit_profile(master_row: pd.Series, marker_text: str) -> None:
             _render_issue_history(serial)
 
 def _render_quick_aed_view(dataframe: pd.DataFrame) -> None:
+    """Render the primary searchable and editable AED profile workspace."""
+
     section_label("AED UNIT PROFILES")
-    search_col, action_col = st.columns([5, 1.25], gap="small")
-    with search_col:
-        keyword = st.text_input(
-            "Quick AED search",
-            placeholder="Search serial number, location or postal code, then click one unit",
-            label_visibility="collapsed",
-            key="management_overview_search",
-        )
-    with action_col:
-        if st.button("Open Master Table", use_container_width=True):
-            _navigate_management("AED Master Table")
+    with st.container(border=True):
+        heading_col, master_col = st.columns([4.8, 1.25], gap="small")
+        with heading_col:
+            st.markdown("### Open one AED electronic profile")
+            st.caption(
+                "Type a Serial Number, location, model or postal code. "
+                "The selected unit opens immediately with all current information, "
+                "service history, editable details, new service entry and Issues."
+            )
+        with master_col:
+            if st.button(
+                "Open Master Table",
+                width="stretch",
+                key="management_profiles_open_master",
+            ):
+                _navigate_management("AED Master Table")
 
-    filtered = dataframe.copy()
-    search_text = clean_text(keyword).casefold()
-    if search_text:
-        mask = pd.Series(False, index=filtered.index)
-        for column in ["Serial Number", "Location", "Postal Code"]:
-            if column in filtered.columns:
-                mask |= filtered[column].astype(str).str.casefold().str.contains(
-                    search_text, regex=False, na=False
+        enriched = dataframe.copy()
+        state = load_unit_state(MAP_UNIT_STATE_FILE)
+        definitions = load_status_definitions(MAP_STATUS_FILE)
+        if not state.empty:
+            enriched = enriched.merge(
+                state[["Serial Number", "Status", "Color Override"]],
+                on="Serial Number",
+                how="left",
+            )
+        else:
+            enriched["Status"] = ""
+            enriched["Color Override"] = ""
+
+        colour_lookup = status_color_lookup(definitions)
+        enriched["Marker"] = enriched.apply(
+            lambda row: (
+                f"{COLOR_EMOJI.get(clean_text(row.get('Color Override')).title(), '●')} "
+                f"{clean_text(row.get('Color Override')).title()}"
+                if clean_text(row.get("Color Override"))
+                else (
+                    f"{COLOR_EMOJI.get(colour_lookup.get(clean_text(row.get('Status')).casefold(), 'Gray'), '●')} "
+                    f"{clean_text(row.get('Status')) or 'Pending'}"
                 )
-        filtered = filtered.loc[mask]
-
-    state = load_unit_state(MAP_UNIT_STATE_FILE)
-    definitions = load_status_definitions(MAP_STATUS_FILE)
-    if not state.empty:
-        filtered = filtered.merge(
-            state[["Serial Number", "Status", "Color Override"]],
-            on="Serial Number",
-            how="left",
+            ),
+            axis=1,
         )
-    else:
-        filtered["Status"] = ""
-        filtered["Color Override"] = ""
 
-    colour_lookup = status_color_lookup(definitions)
-    filtered["Marker"] = filtered.apply(
-        lambda row: (
-            f"{COLOR_EMOJI.get(clean_text(row.get('Color Override')).title(), '●')} "
-            f"{clean_text(row.get('Color Override')).title()}"
-            if clean_text(row.get("Color Override"))
-            else f"{COLOR_EMOJI.get(colour_lookup.get(clean_text(row.get('Status')).casefold(), 'Gray'), '●')} "
-            f"{clean_text(row.get('Status')) or 'Pending'}"
-        ),
-        axis=1,
-    )
-
-    profile_rows = filtered.head(20).copy().reset_index(drop=True)
-    display = profile_rows.reindex(
-        columns=[
-            "Serial Number",
-            "Location",
-            "Postal Code",
-            "Job Type",
-            "Next PM Date",
-            "Marker",
-        ]
-    ).copy()
-    display = display.rename(columns={"Job Type": "Service Type"})
-
-    if display.empty:
-        st.info("No AED units match the quick search.")
-        return
-
-    st.caption(
-        "Click one row to open the unit's complete information, service history and Issue history."
-    )
-    event = st.dataframe(
-        display,
-        use_container_width=True,
-        hide_index=True,
-        height=min(430, 48 + 36 * len(display)),
-        on_select="rerun",
-        selection_mode="single-row",
-        key="aed_management_unit_profile_table",
-    )
-    selected_rows = _selection_rows(event)
-    if selected_rows:
-        selected_index = selected_rows[0]
-        if 0 <= selected_index < len(profile_rows):
-            st.session_state["management_profile_serial"] = clean_text(
-                profile_rows.iloc[selected_index].get("Serial Number")
+        records: list[dict[str, str]] = []
+        for _, row in enriched.iterrows():
+            serial = clean_text(row.get("Serial Number"))
+            if not serial:
+                continue
+            location = (
+                clean_text(row.get("Location"))
+                or clean_text(row.get("Block / Locations"))
+                or "Location not recorded"
+            )
+            model = clean_text(row.get("Model")) or "Model not recorded"
+            postal = clean_text(row.get("Postal Code")) or "No postal code"
+            records.append(
+                {
+                    "serial": serial,
+                    "label": f"{serial} · {model} · {location} · {postal}",
+                    "marker": clean_text(row.get("Marker")),
+                }
             )
 
-    selected_serial = clean_text(st.session_state.get("management_profile_serial"))
-    visible_serials = set(
-        profile_rows.get("Serial Number", pd.Series(dtype=str))
-        .astype(str)
-        .str.strip()
-        .tolist()
-    )
-    if selected_serial and selected_serial not in visible_serials:
-        st.session_state.pop("management_profile_serial", None)
-        selected_serial = ""
+        records.sort(key=lambda item: item["serial"].casefold())
+        serial_options = [item["serial"] for item in records]
+        label_lookup = {item["serial"]: item["label"] for item in records}
+        marker_lookup = {item["serial"]: item["marker"] for item in records}
 
-    if not selected_serial:
-        st.info("Select an AED unit above to open its profile.")
-        return
+        if not serial_options:
+            st.info("No AED units are available in the current Master data.")
+            return
 
-    master_matches = dataframe[
-        dataframe["Serial Number"].astype(str).str.strip().eq(selected_serial)
-    ]
-    profile_matches = profile_rows[
-        profile_rows["Serial Number"].astype(str).str.strip().eq(selected_serial)
-    ]
-    if master_matches.empty:
-        st.warning("The selected AED is no longer available in the current Master data.")
-        st.session_state.pop("management_profile_serial", None)
-        return
+        saved_serial = clean_text(st.session_state.get("management_profile_serial"))
+        if saved_serial not in serial_options:
+            saved_serial = ""
 
-    marker_text = ""
-    if not profile_matches.empty:
-        marker_text = clean_text(profile_matches.iloc[0].get("Marker"))
-    _render_unit_profile(master_matches.iloc[0], marker_text)
+        selector_col, clear_col = st.columns([5.2, 1], gap="small")
+        with selector_col:
+            selected_serial = st.selectbox(
+                "Find an AED unit",
+                options=serial_options,
+                index=(serial_options.index(saved_serial) if saved_serial else None),
+                format_func=lambda serial: label_lookup.get(serial, serial),
+                placeholder="Type to search Serial Number, model, location or postal code",
+                key="management_profile_selector",
+            )
+        with clear_col:
+            st.markdown("<div style='height:1.75rem'></div>", unsafe_allow_html=True)
+            clear_clicked = st.button(
+                "Clear",
+                width="stretch",
+                key="management_profile_clear",
+                disabled=not bool(selected_serial or saved_serial),
+            )
+
+        if clear_clicked:
+            st.session_state.pop("management_profile_serial", None)
+            st.session_state.pop("management_profile_selector", None)
+            rerun_app()
+
+        selected_serial = clean_text(selected_serial)
+        if selected_serial:
+            st.session_state["management_profile_serial"] = selected_serial
+        else:
+            selected_serial = saved_serial
+
+        if not selected_serial:
+            st.info(
+                "Choose one AED above. Its complete profile will open here without leaving AED Management."
+            )
+            return
+
+        master_matches = dataframe[
+            dataframe["Serial Number"].astype(str).str.strip().eq(selected_serial)
+        ]
+        if master_matches.empty:
+            st.warning("The selected AED is no longer available in the current Master data.")
+            st.session_state.pop("management_profile_serial", None)
+            return
+
+        st.divider()
+        _render_unit_profile(
+            master_matches.iloc[0],
+            marker_lookup.get(selected_serial, ""),
+        )
+
 
 def _render_management_overview(dataframe: pd.DataFrame) -> None:
     snapshot = _management_snapshot(dataframe)
@@ -2276,13 +2291,16 @@ def render_aed_management(
     snapshot = _management_snapshot(dataframe)
     _render_management_kpis(snapshot)
 
+    # Unit profiles are the primary management workspace. Keep them high on the
+    # page so supervisors can open, edit and extend one AED record immediately.
+    _render_quick_aed_view(dataframe)
+
+    st.markdown("<div style='height:0.45rem'></div>", unsafe_allow_html=True)
     overview_left, overview_right = st.columns([1.45, 1], gap="large")
     with overview_left:
         _render_attention_required(snapshot)
     with overview_right:
         _render_pm_progress(snapshot)
-
-    _render_quick_aed_view(dataframe)
 
 
 def render_aed_master_table(
