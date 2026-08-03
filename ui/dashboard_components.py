@@ -149,16 +149,26 @@ def render_global_toolbar(snapshot: dict[str, Any]) -> dict[str, str]:
         )
 
     with search_col:
+        search_placeholder = (
+            "Serial, model, location or postal code"
+            if view == "Unit profiles"
+            else "Serial, issue, location or status"
+        )
         keyword = st.text_input(
             "Search work",
             key="dashboard_search",
-            placeholder="Serial, issue, location or status",
+            placeholder=search_placeholder,
             label_visibility="collapsed",
         )
 
-    st.caption(
-        "View · Period · Assignee · Search. The work queue updates immediately when the scope changes."
-    )
+    if view == "Unit profiles":
+        st.caption(
+            "Search selects the AED profile list. Period and assignee remain available when you return to operational views."
+        )
+    else:
+        st.caption(
+            "View · Period · Assignee · Search. The work queue updates immediately when the scope changes."
+        )
 
     return {
         "view": view,
@@ -524,18 +534,47 @@ def render_readiness_summary(summary: dict[str, int]) -> None:
     )
 
 
+def render_unit_profile_entry(snapshot: dict[str, Any]) -> None:
+    """Compact homepage entry that replaces the former readiness summary card."""
+
+    with st.container(border=True):
+        st.markdown("**AED unit profiles**")
+        st.caption(
+            "Open one AED's complete electronic record, edit current details, review service history or add a service record."
+        )
+        st.markdown(
+            _detail_rows(
+                [
+                    ("Registered AEDs", snapshot["data_health"]["total_units"]),
+                    ("Open issues", snapshot["issue_summary"]["open"]),
+                    ("Profiles available", "All registered units"),
+                ]
+            ),
+            unsafe_allow_html=True,
+        )
+        if st.button(
+            "Open AED unit profiles",
+            key="dashboard_open_unit_profiles",
+            type="primary",
+            use_container_width=True,
+        ):
+            st.session_state["dashboard_view"] = "Unit profiles"
+            st.session_state.pop("dashboard_profile_serial", None)
+            rerun_app()
+
+
 def render_operational_summaries(snapshot: dict[str, Any], period: str) -> None:
     st.markdown(
-        '<div class="ops-section-heading"><div><span>CONTROL SUMMARY</span><h2>Progress and readiness</h2></div></div>',
+        '<div class="ops-section-heading"><div><span>CONTROL SUMMARY</span><h2>Progress and unit access</h2></div></div>',
         unsafe_allow_html=True,
     )
-    pm_col, issue_col, readiness_col = st.columns(3, gap="small")
+    pm_col, issue_col, profile_col = st.columns(3, gap="small")
     with pm_col:
         render_pm_progress(snapshot["pm_summary"], period)
     with issue_col:
         render_issue_pipeline(snapshot["issue_summary"])
-    with readiness_col:
-        render_readiness_summary(snapshot["readiness_summary"])
+    with profile_col:
+        render_unit_profile_entry(snapshot)
 
 
 def render_activity_feed(activity: pd.DataFrame) -> None:

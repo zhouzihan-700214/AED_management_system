@@ -6,6 +6,7 @@ import streamlit as st
 
 from services.aed_repository import get_all_units
 from services.dashboard_service import DashboardPaths, build_dashboard_snapshot
+from views.aed_management import render_dashboard_unit_profiles
 from ui.dashboard_components import (
     build_filtered_queue,
     render_activity_feed,
@@ -65,6 +66,16 @@ def render_dashboard(
         except Exception as error:
             st.error(f"The selected management period could not be loaded: {error}")
             return
+
+    if filters["view"] == "Unit profiles":
+        render_dashboard_unit_profiles(
+            snapshot["aed_data"],
+            keyword=filters["keyword"],
+        )
+        render_activity_feed(snapshot["recent_activity"])
+        render_source_health(snapshot)
+        render_quick_actions()
+        return
 
     filtered_queue = build_filtered_queue(snapshot, filters)
     render_kpi_row(snapshot, filters["view"])

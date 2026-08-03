@@ -24,7 +24,7 @@ from utils.text_utils import clean_text
 DATE_FORMAT = "%d-%m-%Y"
 DATETIME_FORMAT = "%d-%m-%Y %H:%M:%S"
 OPEN_ISSUE_STATUSES = set(ISSUE_STATUS_OPTIONS) - {"Closed"}
-DASHBOARD_VIEWS = ["Overview", "PM", "Issues", "Asset readiness"]
+DASHBOARD_VIEWS = ["Overview", "PM", "Issues", "Unit profiles"]
 
 DASHBOARD_QUEUE_COLUMNS = [
     "Queue ID",

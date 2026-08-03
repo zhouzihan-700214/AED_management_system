@@ -2120,6 +2120,141 @@ def _load_management_dataframe() -> pd.DataFrame | None:
         return None
 
 
+def render_dashboard_unit_profiles(
+    dataframe: pd.DataFrame,
+    *,
+    keyword: str = "",
+) -> None:
+    """Render the complete editable unit-profile workspace on the main dashboard."""
+
+    section_label("AED UNIT PROFILES")
+    st.caption(
+        "Select one AED to open its complete information, edit current details, review every service, add a service record or inspect its Issues."
+    )
+
+    toolbar_left, toolbar_right = st.columns([4.8, 1.2], gap="small")
+    with toolbar_left:
+        if clean_text(keyword):
+            st.info(f"Showing AED units matching: {clean_text(keyword)}")
+        else:
+            st.info("Use the Search field in CONTROL SCOPE to narrow the AED list.")
+    with toolbar_right:
+        if st.button(
+            "Open Master Table",
+            width="stretch",
+            key="dashboard_profiles_open_master",
+        ):
+            _navigate_management("AED Master Table")
+
+    filtered = dataframe.copy()
+    search_text = clean_text(keyword).casefold()
+    if search_text:
+        mask = pd.Series(False, index=filtered.index)
+        for column in [
+            "Serial Number",
+            "Model",
+            "Location",
+            "Block / Locations",
+            "Street Name",
+            "Postal Code",
+        ]:
+            if column in filtered.columns:
+                mask |= filtered[column].astype(str).str.casefold().str.contains(
+                    search_text,
+                    regex=False,
+                    na=False,
+                )
+        filtered = filtered.loc[mask]
+
+    state = load_unit_state(MAP_UNIT_STATE_FILE)
+    definitions = load_status_definitions(MAP_STATUS_FILE)
+    if not state.empty:
+        filtered = filtered.merge(
+            state[["Serial Number", "Status", "Color Override"]],
+            on="Serial Number",
+            how="left",
+        )
+    else:
+        filtered["Status"] = ""
+        filtered["Color Override"] = ""
+
+    colour_lookup = status_color_lookup(definitions)
+    filtered["Marker"] = filtered.apply(
+        lambda row: (
+            f"{COLOR_EMOJI.get(clean_text(row.get('Color Override')).title(), '●')} "
+            f"{clean_text(row.get('Color Override')).title()}"
+            if clean_text(row.get("Color Override"))
+            else f"{COLOR_EMOJI.get(colour_lookup.get(clean_text(row.get('Status')).casefold(), 'Gray'), '●')} "
+            f"{clean_text(row.get('Status')) or 'Pending'}"
+        ),
+        axis=1,
+    )
+
+    profile_rows = filtered.head(50).copy().reset_index(drop=True)
+    display = profile_rows.reindex(
+        columns=[
+            "Serial Number",
+            "Model",
+            "Location",
+            "Postal Code",
+            "Job Type",
+            "Next PM Date",
+            "Marker",
+        ]
+    ).copy()
+    display = display.rename(columns={"Job Type": "Service Type"})
+
+    if display.empty:
+        st.info("No AED units match the current search.")
+        st.session_state.pop("dashboard_profile_serial", None)
+        return
+
+    if len(filtered) > len(profile_rows):
+        st.caption(
+            f"Showing the first {len(profile_rows)} of {len(filtered)} matching AED units. Narrow the Search field to find a specific unit."
+        )
+    else:
+        st.caption("Click one row to open that AED's electronic profile.")
+
+    event = st.dataframe(
+        display,
+        width="stretch",
+        hide_index=True,
+        height=min(520, 48 + 36 * len(display)),
+        on_select="rerun",
+        selection_mode="single-row",
+        key="dashboard_aed_unit_profile_table",
+    )
+    selected_rows = _selection_rows(event)
+    if selected_rows:
+        selected_index = selected_rows[0]
+        if 0 <= selected_index < len(profile_rows):
+            st.session_state["dashboard_profile_serial"] = clean_text(
+                profile_rows.iloc[selected_index].get("Serial Number")
+            )
+
+    selected_serial = clean_text(st.session_state.get("dashboard_profile_serial"))
+    if not selected_serial:
+        st.info("Select one AED row above to open its profile.")
+        return
+
+    master_matches = dataframe[
+        dataframe["Serial Number"].astype(str).str.strip().eq(selected_serial)
+    ]
+    profile_matches = profile_rows[
+        profile_rows["Serial Number"].astype(str).str.strip().eq(selected_serial)
+    ]
+    if master_matches.empty:
+        st.warning("The selected AED is no longer available in the current Master data.")
+        st.session_state.pop("dashboard_profile_serial", None)
+        return
+
+    marker_text = ""
+    if not profile_matches.empty:
+        marker_text = clean_text(profile_matches.iloc[0].get("Marker"))
+    _render_unit_profile(master_matches.iloc[0], marker_text)
+
+
 def render_aed_management(
     aed_data_file: str | Path,
     history_file: str | Path,
