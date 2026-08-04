@@ -32,7 +32,7 @@ from services.microsoft_auth_service import (
 from services.pm_service import ensure_aed_pm_fields, ensure_pm_storage
 from services.recovery_service import recover_incomplete_transaction
 from services.system_state_service import bootstrap_system_state, sync_system_state
-from services.unit_profile_service import ensure_manual_service_storage
+from services.manual_service_storage import ensure_manual_service_storage
 from ui.navigation import consume_map_navigation, render_navigation
 from ui.styles import apply_global_styles
 from utils.streamlit_utils import user_is_editing
