@@ -43,38 +43,38 @@ from services.recovery_service import recover_incomplete_transaction
 from services.system_state_service import bootstrap_system_state, sync_system_state
 from ui.navigation import consume_map_navigation, render_navigation
 from ui.styles import apply_global_styles
-try:
-    from utils.streamlit_utils import user_is_editing
-except (ImportError, AttributeError):
-    # Compatibility with deployments that temporarily retain an older
-    # ``utils/streamlit_utils.py``. Keep the startup path self-contained so a
-    # stale helper module cannot prevent the application from loading.
-    _WRITE_WORKSPACE_PAGES = {
-        "PM Planning",
-        "PM Checklist",
-        "Report Issue",
-        "Issues",
-        "AED Map",
-    }
+# Kept local on purpose. The entrypoints must not depend on a newly added
+# helper symbol in ``utils.streamlit_utils`` because Streamlit Cloud can keep
+# an older utility module during a partial deployment.
+_WRITE_WORKSPACE_PAGES = {
+    "PM Planning",
+    "PM Checklist",
+    "Report Issue",
+    "Issues",
+    "AED Map",
+}
 
-    def _profile_editor_is_open() -> bool:
-        for key, value in st.session_state.items():
-            key_text = str(key)
-            if key_text.startswith(("profile_edit_pending::", "profile_service_pending::")):
-                return True
-            if key_text.startswith("profile_section_") and value in {"Edit Details", "Add Service"}:
-                return True
-        return False
 
-    def user_is_editing() -> bool:
-        page = str(st.session_state.get("page", ""))
-        if page in _WRITE_WORKSPACE_PAGES:
+def _profile_editor_is_open() -> bool:
+    for key, value in st.session_state.items():
+        key_text = str(key)
+        if key_text.startswith(("profile_edit_pending::", "profile_service_pending::")):
             return True
-        if page == "AED Master Table":
-            return str(st.session_state.get("aed_editor_mode", "browse")) != "browse"
-        if page in {"AED Management", "Operations Dashboard"}:
-            return _profile_editor_is_open()
-        return False
+        if key_text.startswith("profile_section_") and value in {"Edit Details", "Add Service"}:
+            return True
+    return False
+
+
+def user_is_editing() -> bool:
+    page = str(st.session_state.get("page", ""))
+    if page in _WRITE_WORKSPACE_PAGES:
+        return True
+    if page == "AED Master Table":
+        return str(st.session_state.get("aed_editor_mode", "browse")) != "browse"
+    if page in {"AED Management", "Operations Dashboard"}:
+        return _profile_editor_is_open()
+    return False
+
 from update_missing_coordinates import file_signature, update_missing_coordinates
 from views.registry import render_current_page
 

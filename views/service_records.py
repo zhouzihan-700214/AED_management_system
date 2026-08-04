@@ -7,7 +7,8 @@ from typing import Any
 import pandas as pd
 import streamlit as st
 
-from config import ISSUE_RECORD_FILE, ISSUE_RESOLUTION_FILE, MANUAL_SERVICE_RECORDS_FILE
+from config import ISSUE_RECORD_FILE, ISSUE_RESOLUTION_FILE
+from services.manual_service_storage import MANUAL_SERVICE_RECORDS_FILE
 from services.aed_repository import get_all_units
 from services.unit_profile_service import load_manual_service_records
 from services.service_record_service import (

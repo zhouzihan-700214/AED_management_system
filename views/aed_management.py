@@ -18,11 +18,11 @@ from config import (
     ISSUE_RESOLUTION_FILE,
     MAP_STATUS_FILE,
     MAP_UNIT_STATE_FILE,
-    MANUAL_SERVICE_RECORDS_FILE,
     PM_PLAN_FILE,
     PM_RESPONSES_FILE,
     TRANSACTION_HISTORY_FILE,
 )
+from services.manual_service_storage import MANUAL_SERVICE_RECORDS_FILE
 from services import aed_service
 from services.aed_field_schema import (
     DATE_FIELDS,

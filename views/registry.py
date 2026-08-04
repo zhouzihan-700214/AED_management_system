@@ -9,10 +9,10 @@ from config import (
     ISSUE_HISTORY_FILE,
     ISSUE_RECORD_FILE,
     ISSUE_RESOLUTION_FILE,
-    MANUAL_SERVICE_RECORDS_FILE,
     PM_PLAN_FILE,
     PM_RESPONSES_FILE,
 )
+from services.manual_service_storage import MANUAL_SERVICE_RECORDS_FILE
 from views.aed_management import render_aed_management, render_aed_master_table
 from views.dashboard import render_dashboard
 from views.aed_map import render_aed_map_page

@@ -10,7 +10,7 @@ from typing import Any, Mapping
 
 import pandas as pd
 
-from config import MANUAL_SERVICE_RECORDS_FILE
+from services.manual_service_storage import MANUAL_SERVICE_RECORDS_FILE
 from services.aed_table_edit_service import normalize_value
 from services.csv_storage import atomic_write_csv, read_csv_safe
 from services.pm_service import calculate_next_pm_date
