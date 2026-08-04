@@ -1,3 +1,4 @@
+"""Sidebar navigation and map deep-link handling."""
 from __future__ import annotations
 
 from pathlib import Path
@@ -7,12 +8,11 @@ import streamlit as st
 from services.issue_service import get_open_issue_count
 from utils.streamlit_utils import rerun_app
 
-
 PAGE_NAMES = {
     "Operations Dashboard",
     "AED Management",
     "AED Master Table",
-    "AED Master Data",  # Backward-compatible hidden route.
+    "AED Master Data",
     "AED Map",
     "PM Planning",
     "PM Checklist",
@@ -24,27 +24,24 @@ PAGE_NAMES = {
 
 def query_value(name: str) -> str:
     try:
-        value = st.query_params.get(name, "")
+        raw = st.query_params.get(name, "")
     except Exception:
-        value = ""
-    if isinstance(value, list):
-        value = value[0] if value else ""
-    return str(value).strip()
+        raw = ""
+    if isinstance(raw, list):
+        raw = raw[0] if raw else ""
+    return str(raw).strip()
 
 
 def consume_map_navigation() -> None:
     requested_page = query_value("page")
     if requested_page not in {"PM Checklist", "Report Issue"}:
         return
-
     target = {
         "Serial Number": query_value("serial"),
         "Postal Code": query_value("postal_code"),
     }
-    if requested_page == "PM Checklist":
-        st.session_state["map_pm_target"] = target
-    else:
-        st.session_state["map_report_target"] = target
+    destination_key = "map_pm_target" if requested_page == "PM Checklist" else "map_report_target"
+    st.session_state[destination_key] = target
     st.session_state["page"] = requested_page
     try:
         st.query_params.clear()
@@ -53,10 +50,11 @@ def consume_map_navigation() -> None:
 
 
 def _render_page_button(page_name: str, label: str) -> None:
+    selected = st.session_state["page"] == page_name
     if st.button(
         label,
         width="stretch",
-        type="primary" if st.session_state["page"] == page_name else "secondary",
+        type="primary" if selected else "secondary",
         key=f"nav_{page_name}",
     ):
         st.session_state["page"] = page_name
@@ -69,7 +67,6 @@ def render_navigation(issue_record_file: str | Path, *, build_id: str = "") -> N
 
     open_issue_count = get_open_issue_count(issue_record_file)
     issue_label = f"●  Issues ({open_issue_count})" if open_issue_count else "○  Issues"
-
     groups = [
         ("OVERVIEW", [("Operations Dashboard", "◉  Operations Control")]),
         (
@@ -93,27 +90,23 @@ def render_navigation(issue_record_file: str | Path, *, build_id: str = "") -> N
 
     with st.sidebar:
         st.markdown(
-            """
-            <div class="aed-brand">
-                <div class="aed-brand-icon"><span>⚡</span></div>
-                <div class="aed-brand-name">AED Operations</div>
-            </div>
-            <div class="aed-brand-subtitle">CONTROL · SERVICE · TRACE</div>
-            """,
+            '<div class="aed-brand">'
+            '<div class="aed-brand-icon"><span>⚡</span></div>'
+            '<div class="aed-brand-name">AED Operations</div>'
+            '</div>'
+            '<div class="aed-brand-subtitle">CONTROL · SERVICE · TRACE</div>',
             unsafe_allow_html=True,
         )
-        for section, pages in groups:
-            st.markdown(f'<div class="aed-nav-section">{section}</div>', unsafe_allow_html=True)
+        for section_name, pages in groups:
+            st.markdown(f'<div class="aed-nav-section">{section_name}</div>', unsafe_allow_html=True)
             for page_name, label in pages:
                 _render_page_button(page_name, label)
 
         st.markdown(
-            f"""
-            <div class="aed-sidebar-summary">
-                <strong>Work requiring attention</strong>
-                <span>{open_issue_count} open issue(s). Open Operations Control for PM, issues and unit profiles.</span>
-            </div>
-            <div class="aed-version">AED Operations · {build_id or 'Full rebuild'}</div>
-            """,
+            '<div class="aed-sidebar-summary">'
+            '<strong>Work requiring attention</strong>'
+            f'<span>{open_issue_count} open issue(s). Open Operations Control for PM, issues and unit profiles.</span>'
+            '</div>'
+            f'<div class="aed-version">AED Operations · {build_id or "Full rebuild"}</div>',
             unsafe_allow_html=True,
         )

@@ -1,101 +1,50 @@
-# AED Operations Control System
+# AED Operations Control System — Fresh Semantic Rebuild
 
-## Current release: v8 Service Record Scope
+This project is a clean-folder reconstruction of the validated AED Operations system. It preserves the existing visual language, routes, data files, Excel/OneDrive safeguards, PM and issue workflows, Unit Profiles, map controls and Service Records scope while using a newly separated application shell.
 
-Build ID: `2026-08-04-FULL-REBUILD-v8-SERVICE-RECORD-SCOPE`
+## Run locally
 
-The Service Records page now provides a clickable scope for **All Records**, **Matched**, **Mismatch** and **Loaner**, with counts calculated against the current Master Table. A linked **Loaner Unit** filter is also available. Mismatch records are identified without adding duplicate Record Postal Code, Master Postal Code or mismatch-reason columns.
+```bash
+python -m pip install -r requirements.txt
+python -m streamlit run streamlit_app.py
+```
 
-The AED Management and Unit Profile workspace now uses stable summary cards, one full-width search/filter area, full-text wrapping, responsive 2 x 2 profile statistics, non-cropping buttons and horizontal wrapping profile navigation. All v6 unified-management and v5 field round-trip workflows are preserved.
+`streamlit_app.py` is the only supported executable entrypoint. Do not create or select `app.py`.
 
+## Streamlit Cloud
 
-## v6 unified AED Management
+Set **Main file path** to:
 
-The latest workspace merges the former AED Management and Master Table user journeys without removing the original capabilities. AED Management now contains one search, one linked-filter set and one AED table. In **Browse Units**, clicking a row opens the complete electronic Unit Profile. In **Direct Edit**, the same filtered result set retains reviewed multi-row editing, full-details editing, Add/Deactivate, OneDrive conflict protection and all audit histories. Old `AED Master Table` and `AED Master Data` routes remain as hidden compatibility redirects into AED Management Direct Edit mode.
+```text
+streamlit_app.py
+```
 
-The optimized Unit Profile retains Overview, Edit Details, Service History, Add Service and Issues, with shortcuts to PM Checklist, Report Issue, Service Records, AED Map and filtered table editing.
+Copy `.streamlit/secrets.toml.example` to `.streamlit/secrets.toml` and replace only the placeholders required for OneMap or Microsoft OneDrive. Never commit real credentials.
 
-# AED Operations Control Center — Full Rebuild v5 Field Round-Trip Audited
+## Data modes
 
-Historical v5 build ID: `2026-08-04-FULL-REBUILD-v5-FIELD-ROUNDTRIP`
-
-This package consolidates the preservation, workflow and record-integrity audits into one complete project. It is a complete project, not a partial patch. The original dark sidebar,
-light workspace, page structure and dedicated Master Table remain in place.
+Without Microsoft secrets, the project uses the local workbook in `external_data/IB_list_TEST.xlsx` and the local CSV cache. With valid Microsoft secrets, the official workbook is synchronized through OneDrive and application-owned records are synchronized separately in `AED_System_State.zip`.
 
 ## Main pages
 
-- **Operations Control** — boss overview with `Overview / PM / Issues / Unit Profiles`.
-- **AED Management** — four management KPIs followed immediately by a searchable Unit Profile workspace.
-- **Master Table** — independent sidebar page with partial search, linked filters, Reset, direct table editing, review-before-save, conflict protection, Add/Deactivate and audit histories.
-- **AED Map** — 15+ marker colours, editable status definitions and direct planning-colour auto-save.
-- **PM Planning**
-- **PM Checklist**
-- **Report Issue**
-- **Issues / Resolution / Verification**
-- **Service Records**
+- Operations Control
+- PM Planning
+- PM Checklist
+- Report Issue
+- Issues / Resolution / Verification
+- AED Management and Unit Profiles
+- AED Map
+- Service Records
 
-## Unit Profile
+## Rebuild structure
 
-Select an AED by Serial Number, model, location or postal code. Each profile has:
+The startup lifecycle is separated into `application/` modules for configuration compatibility, session state, runtime contracts, storage bootstrap, sidebar controls and cloud refresh. Existing service and page module interfaces remain compatible so every validated workflow and data format continues to work.
 
-- **Overview** — every field in the current IB List cache, arranged by section.
-- **Edit Details** — formal field editing with Before/After review, confirmation and the same protected Excel transaction used by Master Table.
-- **Service History** — PM checklist records, issue resolutions, current master service fields, legacy Remarks and records added from the profile.
-- **Add Service** — creates a separate structured service record. It does not append text to the company's Remarks. Completed records may optionally update the latest service fields and PM dates in Excel.
-- **Issues** — all issue records linked to the unit.
-- Quick actions to PM Checklist, Report Issue and Master Table.
+See `PROMPT_REBUILD_AED_SYSTEM.md` for the complete reusable generation specification and `REBUILD_VALIDATION.md` for verification results.
 
-Structured profile service records also appear on the separate **Service Records** page.
+## Verified write-back status
 
-## OneDrive design
-
-Two separate remote files are used:
-
-1. `/AED System/IB_list_TEST.xlsx` — official IB List fields.
-2. `/AED System/AED_System_State.zip` — system-only colours, issues, PM records,
-   manual service records, histories and photos.
-
-The official workbook cache is not included in the system-state archive. This avoids
-loading a stale master-data copy from the wrong remote file.
-
-The application checks OneDrive approximately every 10 seconds while the session is
-active. Remote workbook/state downloads are paused while a write form or table editor
-is open, so unsaved input is not replaced. Safe local system-state uploads may still
-run. A manual **Refresh now** action remains available as a recovery tool.
-
-## Deployment reliability
-
-`streamlit_app.py` is the only executable application entrypoint. The repository
-does not contain `app.py`, and no runtime file imports it. Configuration compatibility,
-session bootstrap, OneDrive synchronisation, navigation and page dispatch are composed
-directly in `streamlit_app.py`. Business logic remains separated in `services/`,
-`views/`, `ui/` and `utils/`.
-
-The entrypoint imports runtime modules rather than newly added function symbols and
-validates the required runtime contract before the first page is rendered. This makes
-mixed deployments easier to diagnose and removes the previous dual-entrypoint risk.
-
-## Service Type order
-
-The original `PM` and `Commissioning` positions are preserved. The final three options are:
-
-- `PM+batt`
-- `PM+glass`
-- `PM +batt +glass`
-
-## Validation
-
-- Python compile check: passed for all runtime/test Python files.
-- Automated test suite: **137 passed**.
-- Import audit: all production modules imported with dependency stubs.
-- UI dry-render audit: all 9 visible pages and all 5 Unit Profile sections completed without an exception.
-- Runtime source contains no `Asset readiness` label.
-- Runtime source contains no deprecated `use_container_width` argument.
-
-The dry-render audit is not a substitute for signing into the user's actual Microsoft
-account. See `VALIDATION_REPORT.md`, `RECORD_AUDIT_v4.md` and `FULL_REBUILD_DEPLOY.md`.
-
-
-## v5 field round-trip audit
-
-See `FIELD_ROUNDTRIP_AUDIT_v5.md` for the field-by-field write, reload and display verification.
+- 138 repository tests pass.
+- 110 isolated end-to-end write checks pass.
+- A Battery Replacement History date-normalisation conflict bug found during deep testing was fixed.
+- See `DEEP_FUNCTIONAL_TEST_REPORT.md` for the exact fields and workflow chains tested.

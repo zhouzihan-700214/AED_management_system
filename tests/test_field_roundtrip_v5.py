@@ -247,3 +247,12 @@ def test_pm_issue_resolution_and_planning_schemas_cover_entered_business_fields(
     assert issue_entered.issubset(ISSUE_RECORD_COLUMNS)
     assert resolution_entered.issubset(RESOLUTION_SUBMISSION_COLUMNS)
     assert planning_entered.issubset(PM_PLAN_COLUMNS)
+
+
+def test_battery_history_excel_date_matches_cache_display_value() -> None:
+    from datetime import datetime
+    from services.excel_write_service import _display_value
+
+    assert _display_value('Battery Replacement History', datetime(2023, 1, 21)) == '21-01-2023'
+    assert _display_value('Battery Replacement History', '21-01-2023') == '21-01-2023'
+    assert _display_value('Battery Replacement History', '21-01-2023; 04-08-2026') == '21-01-2023; 04-08-2026'
